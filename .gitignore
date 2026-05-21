@@ -1,0 +1,20 @@
+# Local legacy artifacts kept for reference but not part of the 1.0 repository
+ai_dialog_assistant_source/
+ai_dialog_assistant.rbz
+AI对话助手_使用说明.pdf
+
+# Generated packaging output
+dist/*
+!dist/AI+SU.rbz
+
+# SketchUp model backups and local scratch files
+*.skp
+*.skb
+*.tmp
+*.bak
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
