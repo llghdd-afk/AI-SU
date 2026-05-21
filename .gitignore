@@ -13,6 +13,20 @@ dist/*
 *.tmp
 *.bak
 
+# Local secrets and private config
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+secrets.*
+*.secret.*
+*.token.*
+local_settings.*
+config.local.*
+
 # OS/editor files
 .DS_Store
 Thumbs.db

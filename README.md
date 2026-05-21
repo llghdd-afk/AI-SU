@@ -44,6 +44,14 @@ C:\Users\<你的用户名>\AppData\Roaming\SketchUp\SketchUp 20XX\SketchUp\Plugi
 
 如果你希望 AI 直接看图，请切换到支持视觉输入的模型，例如 Gemini、Qwen-VL 或自定义视觉模型。
 
+## 密钥安全
+
+本仓库是公开仓库，不要把真实 API Key 写入 `AI+SU.rb`、README、示例文件或提交历史。
+
+插件设置页输入的 API Key 会通过 SketchUp 的 `Sketchup.write_default` 保存在本机用户配置中，用于运行时请求，不会作为源码或安装包内容上传到 GitHub。
+
+如果误把密钥提交到仓库，请立即撤销提交、清理历史，并在 DeepSeek 控制台轮换密钥。
+
 ## 建模工作流
 
 1. **方案沟通**：描述目标模型、用途、风格和参考信息。
