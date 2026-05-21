@@ -1,4 +1,9 @@
+.gitattributes text eol=lf
+.gitignore text eol=lf
 *.rb text eol=lf
 *.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
 *.ps1 text eol=crlf
 *.rbz binary
+LICENSE text eol=lf

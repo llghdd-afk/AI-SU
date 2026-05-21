@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate extension
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+
+      - name: Ruby syntax check
+        shell: pwsh
+        run: ruby -c .\AI+SU.rb
+
+      - name: Build RBZ package
+        shell: pwsh
+        run: .\tools\package.ps1
+
+      - name: Verify package contents
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $package = Join-Path $PWD 'dist\AI+SU.rbz'
+          if (-not (Test-Path -LiteralPath $package)) {
+            throw "Package was not created: $package"
+          }
+
+          $zip = [System.IO.Compression.ZipFile]::OpenRead($package)
+          try {
+            $entries = @($zip.Entries | ForEach-Object { $_.FullName })
+          } finally {
+            $zip.Dispose()
+          }
+
+          if ($entries -notcontains 'AI+SU.rb') {
+            throw "Package does not contain AI+SU.rb"
+          }
+
+          $entries | Sort-Object
+
+      - name: Secret pattern scan
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+          $rules = @(
+            @{ Name = 'sk_style_key'; Regex = [regex]'(?i)\bsk-(?:proj-)?[A-Za-z0-9_\-]{16,}\b' },
+            @{ Name = 'bearer_literal'; Regex = [regex]'(?i)Bearer\s+[A-Za-z0-9._\-]{16,}' },
+            @{ Name = 'assigned_secret_literal'; Regex = [regex]'(?i)(api[_-]?key|secret|token)\s*[:=]\s*["'']([^"''\s]{16,})["'']' }
+          )
+
+          $findings = New-Object System.Collections.Generic.List[string]
+
+          function Test-TextForSecrets([string]$Name, [string]$Text) {
+            if ($null -eq $Text) { return }
+            $lines = $Text -split "`r?`n"
+            for ($i = 0; $i -lt $lines.Count; $i++) {
+              foreach ($rule in $rules) {
+                if ($rule.Regex.IsMatch($lines[$i])) {
+                  $findings.Add(("{0}:{1}:{2}" -f $Name, ($i + 1), $rule.Name))
+                }
+              }
+            }
+          }
+
+          foreach ($file in (git ls-files)) {
+            if ($file -match '\.rbz$') { continue }
+            $path = Join-Path $PWD $file
+            if (-not (Test-Path -LiteralPath $path)) { continue }
+
+            $bytes = [System.IO.File]::ReadAllBytes($path)
+            if ($bytes -contains 0) { continue }
+
+            $text = [System.Text.Encoding]::UTF8.GetString($bytes)
+            Test-TextForSecrets $file $text
+          }
+
+          foreach ($archive in (git ls-files | Where-Object { $_ -match '\.rbz$' })) {
+            $archivePath = Join-Path $PWD $archive
+            $zip = [System.IO.Compression.ZipFile]::OpenRead($archivePath)
+            try {
+              foreach ($entry in $zip.Entries) {
+                if ($entry.Length -gt 1048576) { continue }
+                $stream = $entry.Open()
+                try {
+                  $reader = [System.IO.StreamReader]::new($stream, [System.Text.Encoding]::UTF8, $true)
+                  $text = $reader.ReadToEnd()
+                  Test-TextForSecrets "$archive!$($entry.FullName)" $text
+                } finally {
+                  $stream.Dispose()
+                }
+              }
+            } finally {
+              $zip.Dispose()
+            }
+          }
+
+          if ($findings.Count -gt 0) {
+            $findings | Sort-Object -Unique
+            throw "Potential secret patterns were found. Review the paths above; matched values are intentionally not printed."
+          }
+
+          "No literal secret patterns found."

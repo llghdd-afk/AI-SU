@@ -1,0 +1,67 @@
+name: Bug report
+description: Report a reproducible AI+SU problem.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please redact API keys, private drawings, customer data, and sensitive screenshots.
+  - type: input
+    id: version
+    attributes:
+      label: AI+SU version
+      description: Release tag or commit hash.
+      placeholder: v1.0.0
+    validations:
+      required: true
+  - type: input
+    id: sketchup
+    attributes:
+      label: SketchUp version and OS
+      placeholder: SketchUp 2024 on Windows 11
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: Provider and model
+      description: Never paste your API key.
+      placeholder: DeepSeek / deepseek-coder
+    validations:
+      required: true
+  - type: textarea
+    id: prompt
+    attributes:
+      label: Prompt or workflow
+      description: What did you ask AI+SU to do?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error message or generated Ruby
+      description: Paste only redacted logs or safe snippets.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety checklist
+      options:
+        - label: I removed all API keys and secrets.
+          required: true
+        - label: I removed private customer data or drawings.
+          required: true

@@ -1,0 +1,39 @@
+name: Feature request
+description: Suggest an improvement for AI+SU.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow is hard or missing today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should AI+SU do differently?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Modeling workflow
+        - Provider/model support
+        - Screenshot/reference image handling
+        - UI/UX
+        - Packaging/install
+        - Safety/security
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots are welcome only if they do not contain private data.
