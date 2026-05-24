@@ -50,10 +50,41 @@ C:\Users\<你的用户名>\AppData\Roaming\SketchUp\SketchUp 20XX\SketchUp\Plugi
 | Provider | 文本建模 | 参考图/截图 | 说明 |
 | --- | --- | --- | --- |
 | DeepSeek | 支持 | 自动降级为文字上下文 | 推荐用于 coder/Ruby 代码生成。 |
+| 小米 TokenPlan | 支持 | 取决于模型 | 默认中国区接口，模型默认 `mimo-v2.5-pro`。 |
+| Codex CLI 中转站 | 支持 | 自动降级为文字上下文 | 默认 `https://www.hd1100.cc`，使用 Responses API，模型默认 `gpt-5.4`。 |
 | Gemini | 支持 | 支持视觉模型 | 适合直接分析截图和参考图。 |
 | Qwen | 支持 | 取决于模型 | Qwen-VL、Omni、QVQ 等视觉模型可处理图片。 |
 | Kimi | 支持 | 取决于接口能力 | 按兼容接口返回能力使用。 |
 | 自定义 OpenAI 兼容接口 | 支持 | 取决于模型名称和接口能力 | 可接入本地或第三方兼容服务。 |
+
+## 小米 TokenPlan
+
+选择 `小米 TokenPlan` 后，插件会默认填入中国区 OpenAI 兼容接口：
+
+```text
+https://token-plan-cn.xiaomimimo.com/v1/chat/completions
+```
+
+如果你的 TokenPlan 订阅页显示的是其他区域 Base URL，可以直接在 API URL 输入框改成对应地址。插件会保存你手填的 URL，不会在下次打开设置页时强制覆盖。
+
+## Codex CLI 中转站
+
+选择 `Codex CLI 中转站` 后，插件默认填入：
+
+```text
+https://www.hd1100.cc
+```
+
+该 provider 使用 Responses API。插件会自动把 Base URL 规范化到 `/v1/responses`，并在请求中带上：
+
+```json
+{
+  "reasoning": { "effort": "high" },
+  "store": false
+}
+```
+
+默认模型为 `gpt-5.4`。如果你的中转站开放了 `gpt-5.5`，可以在模型下拉框或验证后的模型列表中切换。
 
 ## DeepSeek 使用建议
 

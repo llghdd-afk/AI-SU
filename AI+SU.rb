@@ -2,8 +2,8 @@
 #━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  AI建模助手 - SketchUp AI建模插件 (AI+SU 单文件版)
 #  通过自然语言与AI对话，生成Ruby代码在SketchUp中建模
-#  支持: 通义千问 / Kimi / Gemini / DeepSeek / 自定义OpenAI兼容API
-#  版本: 1.0.0 - 三阶段工作流 + 文生图 + 代码控制台
+#  支持: 通义千问 / Kimi / Gemini / DeepSeek / 小米TokenPlan / Codex CLI中转站 / 自定义OpenAI兼容API
+#  版本: 1.1.0 - 三阶段工作流 + 文生图 + 代码控制台
 #━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 require 'sketchup.rb'
@@ -16,7 +16,7 @@ module AiDialogAssistant
 
   PLUGIN_ID   = 'ai_su'.freeze
   PLUGIN_NAME = 'AI建模助手'.freeze
-  PLUGIN_VER  = '1.0.0'.freeze
+  PLUGIN_VER  = '1.1.0'.freeze
 
   # ━━━━━━━━━━━━━━━━ 配置管理 ━━━━━━━━━━━━━━━━
   module Config
@@ -39,6 +39,7 @@ module AiDialogAssistant
         'name'           => '通义千问(百炼)',
         'chat_url'       => 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
         'models_url'     => 'https://dashscope.aliyuncs.com/compatible-mode/v1/models',
+        'api_mode'       => 'chat_completions',
         'image_url'      => 'https://dashscope.aliyuncs.com/compatible-mode/v1/images/generations',
         'default_model'  => 'qwen-coder-plus-latest',
         'image_models'   => ['wanx2.1-t2i-turbo', 'wanx-v1']
@@ -47,6 +48,7 @@ module AiDialogAssistant
         'name'           => 'Kimi(月之暗面)',
         'chat_url'       => 'https://api.moonshot.cn/v1/chat/completions',
         'models_url'     => 'https://api.moonshot.cn/v1/models',
+        'api_mode'       => 'chat_completions',
         'image_url'      => '',
         'default_model'  => 'moonshot-v1-128k',
         'image_models'   => []
@@ -55,6 +57,7 @@ module AiDialogAssistant
         'name'           => 'Google Gemini',
         'chat_url'       => 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
         'models_url'     => 'https://generativelanguage.googleapis.com/v1beta/openai/models',
+        'api_mode'       => 'chat_completions',
         'image_url'      => '',
         'default_model'  => 'gemini-2.0-flash',
         'image_models'   => []
@@ -63,14 +66,38 @@ module AiDialogAssistant
         'name'           => 'DeepSeek',
         'chat_url'       => 'https://api.deepseek.com/v1/chat/completions',
         'models_url'     => 'https://api.deepseek.com/v1/models',
+        'api_mode'       => 'chat_completions',
         'image_url'      => '',
         'default_model'  => 'deepseek-chat',
         'image_models'   => []
+      },
+      'xiaomi_tokenplan' => {
+        'name'            => '小米 TokenPlan',
+        'chat_url'        => 'https://token-plan-cn.xiaomimimo.com/v1/chat/completions',
+        'models_url'      => 'https://token-plan-cn.xiaomimimo.com/v1/models',
+        'api_mode'        => 'chat_completions',
+        'image_url'       => '',
+        'default_model'   => 'mimo-v2.5-pro',
+        'fallback_models' => ['mimo-v2.5-pro', 'mimo-v2.5', 'mimo-v2-pro', 'mimo-v2-omni'],
+        'image_models'    => []
+      },
+      'codex_cli_relay' => {
+        'name'                     => 'Codex CLI 中转站',
+        'chat_url'                 => 'https://www.hd1100.cc',
+        'models_url'               => '',
+        'api_mode'                 => 'responses',
+        'image_url'                => '',
+        'default_model'            => 'gpt-5.4',
+        'fallback_models'          => ['gpt-5.4', 'gpt-5.5', 'gpt-5'],
+        'reasoning_effort'         => 'high',
+        'disable_response_storage' => true,
+        'image_models'             => []
       },
       'custom' => {
         'name'           => '自定义(OpenAI兼容)',
         'chat_url'       => '',
         'models_url'     => '',
+        'api_mode'       => 'chat_completions',
         'image_url'      => '',
         'default_model'  => '',
         'image_models'   => []
@@ -95,13 +122,19 @@ module AiDialogAssistant
       hash.each { |k, v| set(k, v) }
     end
 
+    def self.provider_config(provider_name = provider)
+      PROVIDERS[provider_name.to_s] || PROVIDERS['custom']
+    end
+
+    def self.provider_api_mode(provider_name = provider)
+      provider_config(provider_name)['api_mode'] || 'chat_completions'
+    end
+
     def self.api_url
-      provider = get('provider')
-      if provider == 'custom'
-        get('api_url')
-      else
-        PROVIDERS.dig(provider, 'chat_url') || get('api_url')
-      end
+      configured_url = get('api_url').to_s.strip
+      default_url = provider_config['chat_url'].to_s
+      configured_url = '' if stale_provider_default_url?(configured_url)
+      normalize_api_url(configured_url.empty? ? default_url : configured_url, provider_api_mode)
     end
 
     def self.api_key;              get('api_key');           end
@@ -110,13 +143,54 @@ module AiDialogAssistant
     def self.image_api_key;        get('image_api_key');     end
     def self.image_model;          get('image_model');       end
     def self.provider;             get('provider');          end
+    def self.responses_api?;        provider_api_mode == 'responses'; end
+
+    def self.stale_provider_default_url?(api_url)
+      return false if api_url.nil? || api_url.empty?
+
+      current_default = provider_config['chat_url'].to_s
+      return false if api_url == current_default
+
+      PROVIDERS.any? do |_name, config|
+        default_url = config['chat_url'].to_s
+        !default_url.empty? && api_url == default_url
+      end
+    end
+
+    def self.normalize_api_url(api_url, api_mode)
+      return api_url if api_url.nil? || api_url.empty?
+
+      uri = URI.parse(api_url)
+      path = uri.path.to_s
+
+      if api_mode == 'responses'
+        if path.empty? || path == '/'
+          uri.path = '/v1/responses'
+        elsif path.end_with?('/v1')
+          uri.path = "#{path}/responses"
+        elsif path.end_with?('/chat/completions')
+          uri.path = path.sub(/\/chat\/completions$/, '/responses')
+        elsif !path.end_with?('/responses')
+          uri.path = "#{path.sub(/\/$/, '')}/responses"
+        end
+      elsif path.empty? || path == '/'
+        uri.path = '/v1/chat/completions'
+      elsif path.end_with?('/v1')
+        uri.path = "#{path}/chat/completions"
+      end
+
+      uri.to_s
+    rescue StandardError
+      api_url
+    end
 
     def self.vision_capable?
       provider_name = provider.to_s
       model_name = model.to_s.downcase
       return false if provider_name == 'deepseek'
+      return false if provider_name == 'codex_cli_relay'
       return true if provider_name == 'gemini'
-      return true if provider_name == 'qwen' && model_name.match?(/(vl|omni|vision|qvq)/)
+      return true if ['qwen', 'xiaomi_tokenplan'].include?(provider_name) && model_name.match?(/(vl|omni|vision|qvq|mimo-v2\.5$|mimo-v2-omni)/)
       return true if provider_name == 'custom' && model_name.match?(/(vision|vl|gpt-4o|gpt-4\.1|gemini|claude-3)/)
 
       false
@@ -293,9 +367,10 @@ module AiDialogAssistant
 
   # ━━━━━━━━━━━━━━━━ API模型获取 ━━━━━━━━━━━━━━━━
   module ModelFetcher
-    def self.fetch_models(api_url, api_key)
-      # 将聊天URL转换为模型列表URL
-      models_url = api_url.sub(/\/chat\/completions$/, '/models')
+    def self.fetch_models(api_url, api_key, provider = nil)
+      provider_config = Config.provider_config(provider)
+      models_url = provider_config['models_url'].to_s
+      models_url = derive_models_url(api_url, provider_config['api_mode']) if models_url.empty?
 
       uri = URI.parse(models_url)
       http = Net::HTTP.new(uri.host, uri.port)
@@ -310,12 +385,46 @@ module AiDialogAssistant
       if response.code.to_i == 200
         data = JSON.parse(response.body)
         models = data['data'].map { |m| m['id'] }.sort rescue []
+        models = fallback_models(provider_config) if models.empty?
         { 'error' => false, 'models' => models }
       else
+        if [404, 405].include?(response.code.to_i)
+          fallback = fallback_models(provider_config)
+          return { 'error' => false, 'models' => fallback } unless fallback.empty?
+        end
+
         { 'error' => true, 'message' => "HTTP #{response.code}" }
       end
     rescue StandardError => e
       { 'error' => true, 'message' => e.message }
+    end
+
+    def self.derive_models_url(api_url, api_mode)
+      normalized_url = Config.normalize_api_url(api_url.to_s, api_mode || 'chat_completions')
+      uri = URI.parse(normalized_url)
+      path = uri.path.to_s
+
+      uri.path =
+        if path.end_with?('/chat/completions')
+          path.sub(/\/chat\/completions$/, '/models')
+        elsif path.end_with?('/responses')
+          path.sub(/\/responses$/, '/models')
+        elsif path.end_with?('/v1')
+          "#{path}/models"
+        else
+          "#{path.sub(/\/$/, '')}/models"
+        end
+
+      uri.to_s
+    rescue StandardError
+      api_url.to_s.sub(/\/chat\/completions$/, '/models').sub(/\/responses$/, '/models')
+    end
+
+    def self.fallback_models(provider_config)
+      models = Array(provider_config['fallback_models'])
+      default_model = provider_config['default_model'].to_s
+      models.unshift(default_model) unless default_model.empty? || models.include?(default_model)
+      models
     end
   end
 
@@ -351,7 +460,7 @@ module AiDialogAssistant
         response = send_request(Config.api_url, api_key, body)
         return response if response['error']
 
-        content = response.dig('choices', 0, 'message', 'content') || ''
+        content = extract_content(response)
         @conversation_history << { 'role' => 'user', 'content' => user_message }
         @conversation_history << { 'role' => 'assistant', 'content' => content }
         @conversation_history = @conversation_history.last(40) if @conversation_history.length > 40
@@ -412,7 +521,7 @@ module AiDialogAssistant
         response = send_request(Config.api_url, api_key, body)
         return response if response['error']
 
-        content = response.dig('choices', 0, 'message', 'content') || ''
+        content = extract_content(response)
         @conversation_history << { 'role' => 'user', 'content' => "[参考图 #{references.length}张] #{user_message}" }
         @conversation_history << { 'role' => 'assistant', 'content' => content }
 
@@ -456,7 +565,7 @@ module AiDialogAssistant
         response = send_request(Config.api_url, api_key, body)
         return response if response['error']
 
-        content = response.dig('choices', 0, 'message', 'content') || ''
+        content = extract_content(response)
         @conversation_history << { 'role' => 'user', 'content' => "[截图] #{user_message}" }
         @conversation_history << { 'role' => 'assistant', 'content' => content }
 
@@ -469,6 +578,12 @@ module AiDialogAssistant
     private
 
     def self.send_request(api_url, api_key, body)
+      return send_responses_request(api_url, api_key, body) if Config.responses_api?
+
+      send_chat_completions_request(api_url, api_key, body)
+    end
+
+    def self.send_chat_completions_request(api_url, api_key, body)
       uri = URI.parse(api_url)
       http = Net::HTTP.new(uri.host, uri.port)
       http.use_ssl = (uri.scheme == 'https')
@@ -489,6 +604,113 @@ module AiDialogAssistant
       end
     rescue StandardError => e
       { 'error' => true, 'message' => e.message }
+    end
+
+    def self.send_responses_request(api_url, api_key, body)
+      endpoint = Config.normalize_api_url(api_url, 'responses')
+      uri = URI.parse(endpoint)
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.use_ssl = (uri.scheme == 'https')
+      http.open_timeout = 15
+      http.read_timeout = 60
+
+      request = Net::HTTP::Post.new(uri.request_uri)
+      request['Content-Type'] = 'application/json'
+      request['Authorization'] = "Bearer #{api_key}"
+      request.body = JSON.generate(to_responses_body(body))
+
+      response = http.request(request)
+
+      if response.code.to_i == 200
+        JSON.parse(response.body)
+      else
+        { 'error' => true, 'message' => "HTTP #{response.code}: #{response.body}" }
+      end
+    rescue StandardError => e
+      { 'error' => true, 'message' => e.message }
+    end
+
+    def self.to_responses_body(chat_body)
+      messages = chat_body['messages'] || []
+      instructions = messages
+        .select { |msg| msg['role'] == 'system' }
+        .map { |msg| message_content_to_text(msg['content']) }
+        .join("\n\n")
+
+      transcript = messages
+        .reject { |msg| msg['role'] == 'system' }
+        .map do |msg|
+          role = msg['role'] || 'user'
+          "#{role.upcase}:\n#{message_content_to_text(msg['content'])}"
+        end
+        .join("\n\n")
+
+      body = {
+        'model'             => chat_body['model'],
+        'input'             => transcript,
+        'max_output_tokens' => chat_body['max_tokens'],
+        'temperature'       => chat_body['temperature'],
+        'stream'            => false
+      }
+      body['instructions'] = instructions unless instructions.empty?
+
+      provider_config = Config.provider_config
+      if provider_config['disable_response_storage']
+        body['store'] = false
+      end
+
+      reasoning_effort = provider_config['reasoning_effort'].to_s
+      unless reasoning_effort.empty?
+        body['reasoning'] = { 'effort' => reasoning_effort }
+      end
+
+      body
+    end
+
+    def self.message_content_to_text(content)
+      return content.to_s if content.is_a?(String)
+
+      if content.is_a?(Array)
+        return content.map do |part|
+          case part['type']
+          when 'text'
+            part['text'].to_s
+          when 'image_url'
+            '[图片输入已附加。若当前中转站不支持视觉输入，请要求用户用文字描述图片关键内容。]'
+          else
+            part.to_s
+          end
+        end.join("\n")
+      end
+
+      content.to_s
+    end
+
+    def self.extract_content(response)
+      chat_content = response.dig('choices', 0, 'message', 'content')
+      return chat_content if chat_content && !chat_content.empty?
+
+      output_text = response['output_text']
+      return output_text if output_text && !output_text.empty?
+
+      output = response['output']
+      if output.is_a?(Array)
+        texts = []
+        output.each do |item|
+          content = item['content']
+          if content.is_a?(Array)
+            content.each do |part|
+              text = part['text'] || part['output_text']
+              texts << text if text && !text.empty?
+            end
+          elsif content.is_a?(String)
+            texts << content
+          end
+        end
+        return texts.join("\n") unless texts.empty?
+      end
+
+      response['content'].to_s
     end
   end
 
@@ -1161,6 +1383,8 @@ module AiDialogAssistant
                     <option value="kimi">Kimi(月之暗面)</option>
                     <option value="gemini">Google Gemini</option>
                     <option value="deepseek">DeepSeek</option>
+                    <option value="xiaomi_tokenplan">小米 TokenPlan</option>
+                    <option value="codex_cli_relay">Codex CLI 中转站</option>
                     <option value="custom">自定义(OpenAI兼容)</option>
                   </select>
                 </div>
@@ -1246,7 +1470,7 @@ module AiDialogAssistant
           <div class="tab-content" id="about-tab">
             <div class="about-container">
               <div class="about-title">AI建模助手</div>
-              <div class="about-version">版本 1.0.0</div>
+              <div class="about-version">版本 1.1.0</div>
 
               <div class="about-section">
                 <div class="about-section-title">功能特性</div>
@@ -1266,6 +1490,8 @@ module AiDialogAssistant
                   • Kimi (月之暗面)<br>
                   • Google Gemini<br>
                   • DeepSeek<br>
+                  • 小米 TokenPlan<br>
+                  • Codex CLI 中转站<br>
                   • 任何 OpenAI 兼容的 API<br>
                 </div>
               </div>
@@ -1314,6 +1540,7 @@ module AiDialogAssistant
                 'name': '通义千问(百炼)',
                 'chat_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
                 'models_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1/models',
+                'api_mode': 'chat_completions',
                 'image_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1/images/generations',
                 'default_model': 'qwen-coder-plus-latest'
               },
@@ -1321,6 +1548,7 @@ module AiDialogAssistant
                 'name': 'Kimi(月之暗面)',
                 'chat_url': 'https://api.moonshot.cn/v1/chat/completions',
                 'models_url': 'https://api.moonshot.cn/v1/models',
+                'api_mode': 'chat_completions',
                 'image_url': '',
                 'default_model': 'moonshot-v1-128k'
               },
@@ -1328,6 +1556,7 @@ module AiDialogAssistant
                 'name': 'Google Gemini',
                 'chat_url': 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
                 'models_url': 'https://generativelanguage.googleapis.com/v1beta/openai/models',
+                'api_mode': 'chat_completions',
                 'image_url': '',
                 'default_model': 'gemini-2.0-flash'
               },
@@ -1335,13 +1564,35 @@ module AiDialogAssistant
                 'name': 'DeepSeek',
                 'chat_url': 'https://api.deepseek.com/v1/chat/completions',
                 'models_url': 'https://api.deepseek.com/v1/models',
+                'api_mode': 'chat_completions',
                 'image_url': '',
                 'default_model': 'deepseek-chat'
+              },
+              'xiaomi_tokenplan': {
+                'name': '小米 TokenPlan',
+                'chat_url': 'https://token-plan-cn.xiaomimimo.com/v1/chat/completions',
+                'models_url': 'https://token-plan-cn.xiaomimimo.com/v1/models',
+                'api_mode': 'chat_completions',
+                'image_url': '',
+                'default_model': 'mimo-v2.5-pro',
+                'fallback_models': ['mimo-v2.5-pro', 'mimo-v2.5', 'mimo-v2-pro', 'mimo-v2-omni']
+              },
+              'codex_cli_relay': {
+                'name': 'Codex CLI 中转站',
+                'chat_url': 'https://www.hd1100.cc',
+                'models_url': '',
+                'api_mode': 'responses',
+                'image_url': '',
+                'default_model': 'gpt-5.4',
+                'fallback_models': ['gpt-5.4', 'gpt-5.5', 'gpt-5'],
+                'reasoning_effort': 'high',
+                'disable_response_storage': true
               },
               'custom': {
                 'name': '自定义(OpenAI兼容)',
                 'chat_url': '',
                 'models_url': '',
+                'api_mode': 'chat_completions',
                 'image_url': '',
                 'default_model': ''
               }
@@ -1351,7 +1602,8 @@ module AiDialogAssistant
             let state = {
               currentTab: 'chat',
               isLoading: false,
-              referenceImages: []
+              referenceImages: [],
+              pendingModel: ''
             };
 
             function callSketchup(callbackName, ...args) {
@@ -1686,35 +1938,45 @@ module AiDialogAssistant
               document.getElementById('imageApiKeyInput').value = settings.image_api_key || '';
               document.getElementById('imageModelSelect').value = settings.image_model || 'wanx2.1-t2i-turbo';
 
-              updateProviderUrl();
+              applyProviderDefaults(false, settings.model || '');
             }
 
             function onProviderChange() {
-              const provider = document.getElementById('providerSelect').value;
-              const providerConfig = PROVIDERS[provider];
-
-              if (provider === 'custom') {
-                document.getElementById('apiUrlInput').value = '';
-              } else {
-                document.getElementById('apiUrlInput').value = providerConfig.chat_url;
-              }
-
-              updateProviderUrl();
+              applyProviderDefaults(true, '');
             }
 
             function updateProviderUrl() {
+              applyProviderDefaults(false, document.getElementById('modelSelect').value);
+            }
+
+            function applyProviderDefaults(forceUrl, selectedModel) {
               const provider = document.getElementById('providerSelect').value;
               const providerConfig = PROVIDERS[provider];
+              const apiUrlInput = document.getElementById('apiUrlInput');
 
-              if (provider !== 'custom') {
-                document.getElementById('apiUrlInput').value = providerConfig.chat_url;
+              if (provider === 'custom') {
+                if (forceUrl) apiUrlInput.value = '';
+              } else if (forceUrl || !apiUrlInput.value.trim() || isStaleProviderDefaultUrl(apiUrlInput.value.trim(), provider)) {
+                apiUrlInput.value = providerConfig.chat_url;
                 if (providerConfig.image_url) {
                   document.getElementById('imageApiUrlInput').value = providerConfig.image_url;
                 }
               }
+
+              ensureModelOption(selectedModel || providerConfig.default_model || '');
+            }
+
+            function isStaleProviderDefaultUrl(apiUrl, provider) {
+              if (!apiUrl || !PROVIDERS[provider]) return false;
+              if (apiUrl === PROVIDERS[provider].chat_url) return false;
+              return Object.keys(PROVIDERS).some(key => {
+                const defaultUrl = PROVIDERS[key].chat_url || '';
+                return defaultUrl && apiUrl === defaultUrl;
+              });
             }
 
             function verifyConnection() {
+              const provider = document.getElementById('providerSelect').value;
               const apiUrl = document.getElementById('apiUrlInput').value.trim();
               const apiKey = document.getElementById('apiKeyInput').value.trim();
               const status = document.getElementById('verifyStatus');
@@ -1727,7 +1989,12 @@ module AiDialogAssistant
               status.innerHTML = '<span class="loading">正在验证</span>';
               status.classList.remove('success', 'error');
 
-              callSketchup('fetch_models', apiUrl + '|' + apiKey);
+              state.pendingModel = document.getElementById('modelSelect').value || (PROVIDERS[provider] && PROVIDERS[provider].default_model) || '';
+              callSketchup('fetch_models', JSON.stringify({
+                provider: provider,
+                api_url: apiUrl,
+                api_key: apiKey
+              }));
             }
 
             function onModelsLoaded(modelsJson) {
@@ -1743,10 +2010,34 @@ module AiDialogAssistant
               });
 
               if (models.length > 0) {
-                modelSelect.value = models[0];
+                const provider = document.getElementById('providerSelect').value;
+                const fallbackModel = (PROVIDERS[provider] && PROVIDERS[provider].default_model) || '';
+                const preferredModel = state.pendingModel || fallbackModel;
+                if (preferredModel && models.includes(preferredModel)) {
+                  modelSelect.value = preferredModel;
+                } else if (fallbackModel && models.includes(fallbackModel)) {
+                  modelSelect.value = fallbackModel;
+                } else {
+                  modelSelect.value = models[0];
+                }
               }
 
               showVerifyStatus('success', '连接成功！已获取 ' + models.length + ' 个模型');
+            }
+
+            function ensureModelOption(model) {
+              const modelSelect = document.getElementById('modelSelect');
+              if (!model) return;
+
+              const exists = Array.from(modelSelect.options).some(option => option.value === model);
+              if (!exists) {
+                modelSelect.innerHTML = '';
+                const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                modelSelect.appendChild(option);
+              }
+              modelSelect.value = model;
             }
 
             function onModelsFailed(error) {
@@ -1997,8 +2288,16 @@ module AiDialogAssistant
       @dialog.add_action_callback('fetch_models') { |_ctx, params|
         Thread.new do
           begin
-            api_url, api_key = params.split('|', 2)
-            result = ModelFetcher.fetch_models(api_url, api_key)
+            if params.to_s.strip.start_with?('{')
+              payload = JSON.parse(params)
+              provider = payload['provider']
+              api_url = payload['api_url']
+              api_key = payload['api_key']
+            else
+              provider = Config.provider
+              api_url, api_key = params.split('|', 2)
+            end
+            result = ModelFetcher.fetch_models(api_url, api_key, provider)
 
             if result['error']
               @dialog.execute_script("onModelsFailed('#{result['message'].gsub("'", "\\\\'")}')")

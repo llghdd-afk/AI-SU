@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.0 - 2026-05-24
+
+- Added Xiaomi TokenPlan as a first-class provider with a default China-region OpenAI-compatible endpoint.
+- Added Codex CLI relay as a first-class provider using the Responses API.
+- Added Responses API request conversion with `reasoning.effort = high` and `store = false` for the Codex CLI relay provider.
+- Preserved manually edited provider URLs instead of overwriting them every time settings load.
+- Added provider fallback model lists for Xiaomi TokenPlan and Codex CLI relay.
+- Updated documentation for Xiaomi TokenPlan and Codex CLI relay setup.
+
 ## 1.0.0 - 2026-05-21
 
 - Renamed the release entry file to `AI+SU.rb`.
