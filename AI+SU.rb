@@ -3,7 +3,7 @@
 #  AI建模助手 - SketchUp AI建模插件 (AI+SU 单文件版)
 #  通过自然语言与AI对话，生成Ruby代码在SketchUp中建模
 #  支持: 通义千问 / Kimi / Gemini / DeepSeek / 小米TokenPlan / Codex CLI中转站 / 自定义OpenAI兼容API
-#  版本: 1.1.0 - 三阶段工作流 + 文生图 + 代码控制台
+#  版本: 1.2.0 - 三阶段工作流 + 图像理解 + 文生图 + 代码控制台
 #━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 require 'sketchup.rb'
@@ -16,7 +16,7 @@ module AiDialogAssistant
 
   PLUGIN_ID   = 'ai_su'.freeze
   PLUGIN_NAME = 'AI建模助手'.freeze
-  PLUGIN_VER  = '1.1.0'.freeze
+  PLUGIN_VER  = '1.2.0'.freeze
 
   # ━━━━━━━━━━━━━━━━ 配置管理 ━━━━━━━━━━━━━━━━
   module Config
@@ -76,6 +76,7 @@ module AiDialogAssistant
         'chat_url'        => 'https://token-plan-cn.xiaomimimo.com/v1/chat/completions',
         'models_url'      => 'https://token-plan-cn.xiaomimimo.com/v1/models',
         'api_mode'        => 'chat_completions',
+        'image_detail'    => 'high',
         'image_url'       => '',
         'default_model'   => 'mimo-v2.5-pro',
         'fallback_models' => ['mimo-v2.5-pro', 'mimo-v2.5', 'mimo-v2-pro', 'mimo-v2-omni'],
@@ -86,6 +87,7 @@ module AiDialogAssistant
         'chat_url'                 => 'https://www.hd1100.cc',
         'models_url'               => '',
         'api_mode'                 => 'responses',
+        'image_detail'             => 'high',
         'image_url'                => '',
         'default_model'            => 'gpt-5.4',
         'fallback_models'          => ['gpt-5.4', 'gpt-5.5', 'gpt-5'],
@@ -128,6 +130,10 @@ module AiDialogAssistant
 
     def self.provider_api_mode(provider_name = provider)
       provider_config(provider_name)['api_mode'] || 'chat_completions'
+    end
+
+    def self.image_detail
+      provider_config['image_detail'] || 'high'
     end
 
     def self.api_url
@@ -188,10 +194,10 @@ module AiDialogAssistant
       provider_name = provider.to_s
       model_name = model.to_s.downcase
       return false if provider_name == 'deepseek'
-      return false if provider_name == 'codex_cli_relay'
+      return true if provider_name == 'codex_cli_relay' && model_name.match?(/(gpt-5|gpt-4o|gpt-4\.1|vision|omni)/)
       return true if provider_name == 'gemini'
       return true if ['qwen', 'xiaomi_tokenplan'].include?(provider_name) && model_name.match?(/(vl|omni|vision|qvq|mimo-v2\.5$|mimo-v2-omni)/)
-      return true if provider_name == 'custom' && model_name.match?(/(vision|vl|gpt-4o|gpt-4\.1|gemini|claude-3)/)
+      return true if provider_name == 'custom' && model_name.match?(/(vision|vl|gpt-5|gpt-4o|gpt-4\.1|gemini|claude-3)/)
 
       false
     end
@@ -231,6 +237,8 @@ module AiDialogAssistant
         2. 如果需求缺少尺寸、结构、摆放位置、材质或风格，先主动提出3-6个关键问题。
         3. 如果用户粘贴了参考图但当前模型不支持视觉输入，请用户用文字补充参考图中的关键造型、尺寸比例、材质和装配关系。
         4. 如果用户要求快速生成，可以给出合理默认值，但仍要先列出默认参数并征求确认。
+        5. 如果用户提供效果图/参考图并要求“按图建模”，先识别图中的主体形态、比例、构件层级、材质和可建模特征；缺少真实尺寸时给出合理默认尺寸并询问确认，用户明确要求直接生成时才输出Ruby代码。
+        6. 如果用户提供当前SketchUp截图并要求修改，先指出截图中可见的问题（漂浮、错位、散件、门窗未贴墙、比例不协调等），再生成只针对现有模型修正的Ruby代码，尽量保留已有对象。
 
         ## 代码规范
 
@@ -505,7 +513,7 @@ module AiDialogAssistant
       references.first(3).each do |ref|
         data_url = ref['data_url'].to_s
         next if data_url.empty?
-        user_content << { 'type' => 'image_url', 'image_url' => { 'url' => data_url } }
+        user_content << { 'type' => 'image_url', 'image_url' => { 'url' => data_url, 'detail' => Config.image_detail } }
       end
       messages << { 'role' => 'user', 'content' => user_content }
 
@@ -549,7 +557,7 @@ module AiDialogAssistant
 
       user_content = [
         { 'type' => 'text', 'text' => user_message },
-        { 'type' => 'image_url', 'image_url' => { 'url' => "data:image/png;base64,#{image_base64}" } }
+        { 'type' => 'image_url', 'image_url' => { 'url' => "data:image/png;base64,#{image_base64}", 'detail' => Config.image_detail } }
       ]
       messages << { 'role' => 'user', 'content' => user_content }
 
@@ -637,17 +645,11 @@ module AiDialogAssistant
         .map { |msg| message_content_to_text(msg['content']) }
         .join("\n\n")
 
-      transcript = messages
-        .reject { |msg| msg['role'] == 'system' }
-        .map do |msg|
-          role = msg['role'] || 'user'
-          "#{role.upcase}:\n#{message_content_to_text(msg['content'])}"
-        end
-        .join("\n\n")
+      input_parts = responses_input_parts(messages.reject { |msg| msg['role'] == 'system' })
 
       body = {
         'model'             => chat_body['model'],
-        'input'             => transcript,
+        'input'             => [{ 'role' => 'user', 'content' => input_parts }],
         'max_output_tokens' => chat_body['max_tokens'],
         'temperature'       => chat_body['temperature'],
         'stream'            => false
@@ -665,6 +667,47 @@ module AiDialogAssistant
       end
 
       body
+    end
+
+    def self.responses_input_parts(messages)
+      transcript_chunks = []
+      image_parts = []
+
+      messages.each do |msg|
+        role = (msg['role'] || 'user').to_s.upcase
+        content = msg['content']
+
+        if content.is_a?(Array)
+          text_chunks = []
+          content.each do |part|
+            case part['type']
+            when 'text'
+              text_chunks << part['text'].to_s
+            when 'image_url'
+              image_url = part.dig('image_url', 'url').to_s
+              next if image_url.empty?
+
+              image_parts << {
+                'type'      => 'input_image',
+                'image_url' => image_url,
+                'detail'    => (part.dig('image_url', 'detail') || Config.image_detail)
+              }
+            else
+              text_chunks << part.to_s
+            end
+          end
+          transcript_chunks << "#{role}:\n#{text_chunks.join("\n")}" unless text_chunks.empty?
+        else
+          transcript_chunks << "#{role}:\n#{content}"
+        end
+      end
+
+      transcript = transcript_chunks.join("\n\n").strip
+      input_parts = []
+      input_parts << { 'type' => 'input_text', 'text' => transcript } unless transcript.empty?
+      input_parts.concat(image_parts)
+      input_parts << { 'type' => 'input_text', 'text' => '请根据当前上下文继续。' } if input_parts.empty?
+      input_parts
     end
 
     def self.message_content_to_text(content)
@@ -753,6 +796,55 @@ module AiDialogAssistant
         { 'error' => false, 'message' => message, 'result' => eval_result.to_s }
       rescue StandardError => e
         { 'error' => true, 'message' => "执行错误: #{e.message}" }
+      end
+    end
+
+    def self.model_context
+      model = Sketchup.active_model
+      return 'SketchUp 模型未打开。' unless model
+
+      entities = model.active_entities
+      counts = Hash.new(0)
+      names = []
+      collect_entity_summary(entities, counts, names, 0)
+
+      bounds = model.bounds rescue nil
+      size_text = ''
+      if bounds && bounds.valid?
+        size_text = format(
+          "模型包围盒约 %.2fm x %.2fm x %.2fm",
+          bounds.width.to_f / 1.m,
+          bounds.depth.to_f / 1.m,
+          bounds.height.to_f / 1.m
+        )
+      end
+
+      selection_count = model.selection.length rescue 0
+      summary = []
+      summary << size_text unless size_text.empty?
+      summary << "当前选择数量：#{selection_count}"
+      summary << "实体统计：#{counts.sort.map { |k, v| "#{k}=#{v}" }.join(', ')}"
+      summary << "主要对象：#{names.first(12).join('、')}" unless names.empty?
+      summary.join("\n")
+    rescue StandardError => e
+      "无法读取当前模型结构：#{e.message}"
+    end
+
+    def self.collect_entity_summary(entities, counts, names, depth)
+      return if depth > 2
+
+      entities.each do |entity|
+        type_name = entity.typename rescue entity.class.name
+        counts[type_name] += 1
+
+        if grouped_entity?(entity)
+          entity_name = entity.name.to_s rescue ''
+          names << entity_name unless entity_name.empty?
+          collect_entity_summary(entity.entities, counts, names, depth + 1) if entity.respond_to?(:entities)
+        elsif entity.respond_to?(:definition)
+          def_name = entity.definition.name.to_s rescue ''
+          names << def_name unless def_name.empty?
+        end
       end
     end
 
@@ -1355,13 +1447,17 @@ module AiDialogAssistant
                 <div style="width: 100%;">
                   <div class="quick-buttons">
                     <button class="quick-btn" id="effectBtn" title="生成效果图">效果图</button>
+                    <button class="quick-btn" id="attachImageBtn" title="上传参考图">参考图</button>
+                    <button class="quick-btn" id="imageModelBtn" title="按参考图生成模型">按图建模</button>
                     <button class="quick-btn" id="codeBtn" title="生成建模代码">建模</button>
                     <button class="quick-btn" id="screenshotBtn" title="截图分析">截图分析</button>
+                    <button class="quick-btn" id="screenshotFixBtn" title="根据当前截图修改模型">截图修正</button>
                     <button class="quick-btn" id="undoBtn" title="撤销">撤销</button>
                   </div>
+                  <input type="file" id="referenceFileInput" accept="image/*" multiple style="display: none;" />
                   <div id="referenceStrip" class="reference-strip"></div>
                   <div class="input-row">
-                    <input type="text" id="messageInput" placeholder="输入你的设计需求，可直接粘贴参考图..." />
+                    <input type="text" id="messageInput" placeholder="输入需求，或直接 Ctrl+V 粘贴效果图/截图..." />
                     <button class="btn primary" id="sendBtn">发送</button>
                   </div>
                 </div>
@@ -1470,7 +1566,7 @@ module AiDialogAssistant
           <div class="tab-content" id="about-tab">
             <div class="about-container">
               <div class="about-title">AI建模助手</div>
-              <div class="about-version">版本 1.1.0</div>
+              <div class="about-version">版本 1.2.0</div>
 
               <div class="about-section">
                 <div class="about-section-title">功能特性</div>
@@ -1478,6 +1574,7 @@ module AiDialogAssistant
                   • 通过自然语言描述设计需求<br>
                   • 三阶段工作流：方案沟通 → 参数确认 → 代码生成<br>
                   • AI 文生图功能：生成概念效果图<br>
+                  • 图像理解：粘贴效果图按图建模，或截图后修正当前模型<br>
                   • Ruby 代码实时编辑和执行<br>
                   • 支持多个 AI 服务商<br>
                 </div>
@@ -1514,8 +1611,11 @@ module AiDialogAssistant
                 <div class="about-section-title">快捷按钮</div>
                 <div class="about-text">
                   • <strong>效果图</strong>：生成概念效果图<br>
+                  • <strong>参考图</strong>：上传图片，聊天框也可直接 Ctrl+V 粘贴<br>
+                  • <strong>按图建模</strong>：根据粘贴或上传的效果图生成建模方案<br>
                   • <strong>建模</strong>：生成 SketchUp 建模代码<br>
                   • <strong>截图分析</strong>：分析 SketchUp 中的截图<br>
+                  • <strong>截图修正</strong>：根据当前视图截图生成修正方案或 Ruby 代码<br>
                   • <strong>撤销</strong>：撤销上一步操作<br>
                 </div>
               </div>
@@ -1573,6 +1673,7 @@ module AiDialogAssistant
                 'chat_url': 'https://token-plan-cn.xiaomimimo.com/v1/chat/completions',
                 'models_url': 'https://token-plan-cn.xiaomimimo.com/v1/models',
                 'api_mode': 'chat_completions',
+                'image_detail': 'high',
                 'image_url': '',
                 'default_model': 'mimo-v2.5-pro',
                 'fallback_models': ['mimo-v2.5-pro', 'mimo-v2.5', 'mimo-v2-pro', 'mimo-v2-omni']
@@ -1582,6 +1683,7 @@ module AiDialogAssistant
                 'chat_url': 'https://www.hd1100.cc',
                 'models_url': '',
                 'api_mode': 'responses',
+                'image_detail': 'high',
                 'image_url': '',
                 'default_model': 'gpt-5.4',
                 'fallback_models': ['gpt-5.4', 'gpt-5.5', 'gpt-5'],
@@ -1639,11 +1741,17 @@ module AiDialogAssistant
                 }
               });
               document.getElementById('messageInput').addEventListener('paste', handleReferencePaste);
+              document.getElementById('referenceFileInput').addEventListener('change', handleReferenceFiles);
 
               // 快捷按钮
               document.getElementById('effectBtn').addEventListener('click', generateEffect);
+              document.getElementById('attachImageBtn').addEventListener('click', function() {
+                document.getElementById('referenceFileInput').click();
+              });
+              document.getElementById('imageModelBtn').addEventListener('click', generateModelFromReference);
               document.getElementById('codeBtn').addEventListener('click', generateCode);
               document.getElementById('screenshotBtn').addEventListener('click', analyzeScreenshot);
+              document.getElementById('screenshotFixBtn').addEventListener('click', reviseFromScreenshot);
               document.getElementById('undoBtn').addEventListener('click', undo);
 
               // Ruby 控制台
@@ -1737,6 +1845,7 @@ module AiDialogAssistant
                 : message;
               addMessage('user', displayMessage);
               input.value = '';
+              input.placeholder = '输入需求，或直接 Ctrl+V 粘贴效果图/截图...';
 
               // 调用 Ruby 发送消息
               state.isLoading = true;
@@ -1764,8 +1873,18 @@ module AiDialogAssistant
               }
             }
 
+            function handleReferenceFiles(event) {
+              const files = Array.from(event.target.files || []);
+              files.forEach(file => addReferenceImage(file));
+              event.target.value = '';
+            }
+
             function addReferenceImage(file) {
               if (!file) return;
+              if (!file.type || file.type.indexOf('image/') !== 0) {
+                alert('请选择图片文件');
+                return;
+              }
               if (state.referenceImages.length >= 3) {
                 alert('一次最多粘贴 3 张参考图');
                 return;
@@ -1779,7 +1898,43 @@ module AiDialogAssistant
                   data_url: reader.result
                 });
                 renderReferenceStrip();
+                showDraftHint();
               };
+              resizeImageFile(file, function(dataUrl) {
+                if (dataUrl) {
+                  state.referenceImages.push({
+                    name: file.name || 'clipboard-image',
+                    mime: 'image/jpeg',
+                    data_url: dataUrl
+                  });
+                  renderReferenceStrip();
+                  showDraftHint();
+                } else {
+                  reader.readAsDataURL(file);
+                }
+              });
+            }
+
+            function resizeImageFile(file, callback) {
+              const reader = new FileReader();
+              reader.onload = function() {
+                const img = new Image();
+                img.onload = function() {
+                  const maxSize = 1600;
+                  const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+                  const width = Math.max(1, Math.round(img.width * scale));
+                  const height = Math.max(1, Math.round(img.height * scale));
+                  const canvas = document.createElement('canvas');
+                  canvas.width = width;
+                  canvas.height = height;
+                  const ctx = canvas.getContext('2d');
+                  ctx.drawImage(img, 0, 0, width, height);
+                  callback(canvas.toDataURL('image/jpeg', 0.86));
+                };
+                img.onerror = function() { callback(null); };
+                img.src = reader.result;
+              };
+              reader.onerror = function() { callback(null); };
               reader.readAsDataURL(file);
             }
 
@@ -1787,6 +1942,9 @@ module AiDialogAssistant
               const strip = document.getElementById('referenceStrip');
               strip.innerHTML = '';
               strip.classList.toggle('has-images', state.referenceImages.length > 0);
+              if (state.referenceImages.length === 0) {
+                document.getElementById('messageInput').placeholder = '输入需求，或直接 Ctrl+V 粘贴效果图/截图...';
+              }
 
               state.referenceImages.forEach((ref, index) => {
                 const chip = document.createElement('div');
@@ -1801,6 +1959,14 @@ module AiDialogAssistant
                 });
                 strip.appendChild(chip);
               });
+            }
+
+            function showDraftHint() {
+              const input = document.getElementById('messageInput');
+              if (!input.value.trim()) {
+                input.placeholder = '已粘贴参考图：输入要求后发送，或点“按图建模”';
+              }
+              input.focus();
             }
 
             function addMessage(role, content) {
@@ -1853,6 +2019,32 @@ module AiDialogAssistant
               callSketchup('generate_image', message);
             }
 
+            function generateModelFromReference() {
+              const input = document.getElementById('messageInput');
+              const userNote = input.value.trim();
+
+              if (state.referenceImages.length === 0) {
+                alert('请先粘贴或上传参考图');
+                return;
+              }
+
+              const prompt =
+                '请根据我附上的效果图/参考图进行图像理解，并转成 SketchUp 可建模方案。' +
+                '先识别主体造型、构件层级、比例关系、材质和需要保留的视觉特征；' +
+                '如果缺少真实尺寸，请给出合理默认尺寸并让我确认。' +
+                '如果我已经明确要求直接建模，请在列出关键假设后生成完整 SketchUp Ruby 代码。' +
+                (userNote ? '\\n\\n用户补充：' + userNote : '');
+
+              addMessage('user', '按参考图建模' + (userNote ? ': ' + userNote : '') + '\\n[参考图 ' + state.referenceImages.length + ' 张]');
+              input.value = '';
+
+              const payload = JSON.stringify(state.referenceImages);
+              state.referenceImages = [];
+              renderReferenceStrip();
+              state.isLoading = true;
+              callSketchup('send_message_with_refs', prompt, payload);
+            }
+
             function generateCode() {
               const input = document.getElementById('messageInput');
               const message = input.value.trim();
@@ -1870,9 +2062,30 @@ module AiDialogAssistant
             }
 
             function analyzeScreenshot() {
-              addMessage('user', '正在分析截图...');
+              const input = document.getElementById('messageInput');
+              const note = input.value.trim();
+              const prompt =
+                '请分析这张 SketchUp 当前截图，描述当前模型状态、可见问题和继续优化建议。' +
+                '除非我明确要求生成代码，否则先不要输出 Ruby 代码。' +
+                (note ? '\\n\\n用户补充：' + note : '');
+              addMessage('user', '正在分析截图' + (note ? ': ' + note : '') + '...');
+              input.value = '';
               state.isLoading = true;
-              callSketchup('analyze_screenshot');
+              callSketchup('analyze_screenshot', prompt);
+            }
+
+            function reviseFromScreenshot() {
+              const input = document.getElementById('messageInput');
+              const note = input.value.trim();
+              const prompt =
+                '请根据这张 SketchUp 当前截图和模型结构，找出当前模型需要修正的地方，' +
+                '例如构件漂浮、门窗未贴墙、比例不协调、散件未组合、位置偏移等。' +
+                '请优先生成用于修正现有模型的 SketchUp Ruby 代码，尽量保留已有对象，只修正必要几何和位置。' +
+                (note ? '\\n\\n用户补充：' + note : '');
+              addMessage('user', '根据当前截图修正模型' + (note ? ': ' + note : '') + '...');
+              input.value = '';
+              state.isLoading = true;
+              callSketchup('analyze_screenshot', prompt);
             }
 
             function undo() {
@@ -2224,7 +2437,7 @@ module AiDialogAssistant
       }
 
       # 截图分析回调
-      @dialog.add_action_callback('analyze_screenshot') { |_ctx|
+      @dialog.add_action_callback('analyze_screenshot') { |_ctx, user_prompt = nil|
         Thread.new do
           begin
             model = Sketchup.active_model
@@ -2243,7 +2456,10 @@ module AiDialogAssistant
               image_base64 = Base64.strict_encode64(image_data)
               File.delete(temp_file) rescue nil
 
-              response = ApiClient.chat_with_image('请分析这张 SketchUp 截图，描述当前模型状态，并提出优化建议或继续建模的方案:', image_base64)
+              prompt = user_prompt.to_s.strip
+              prompt = '请分析这张 SketchUp 截图，描述当前模型状态，并提出优化建议或继续建模的方案:' if prompt.empty?
+              context = CodeExecutor.model_context rescue '无法读取当前模型结构。'
+              response = ApiClient.chat_with_image("#{prompt}\n\n[当前SketchUp模型结构]\n#{context}", image_base64)
 
               if response['error']
                 @dialog.execute_script("onChatError('#{response['message'].gsub("'", "\\\\'")}')")

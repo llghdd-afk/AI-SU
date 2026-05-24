@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.0 - 2026-05-24
+
+- Added first-class image-understanding workflows for pasted reference images and current SketchUp screenshots.
+- Added a `参考图` fallback upload button while keeping chat-box paste as the primary image input path.
+- Added `按图建模` for turning pasted effect/reference images into a modeling plan or Ruby code.
+- Added `截图修正` for screenshot-guided repair of the current SketchUp model.
+- Passed image inputs through to the Responses API as `input_image` parts for the Codex CLI relay provider.
+- Added current model context to screenshot analysis and repair requests.
+- Added lightweight image resizing before sending pasted/uploaded images to reduce payload size.
+
 ## 1.1.0 - 2026-05-24
 
 - Added Xiaomi TokenPlan as a first-class provider with a default China-region OpenAI-compatible endpoint.
