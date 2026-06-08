@@ -2,7 +2,13 @@
 
 ## 1. Prepare
 
-Start by creating a run folder with the helper script. Use a neutral project slug if the user does not provide one. If the user wants to work from an existing screenshot, copy it into `input/`; if they want a fresh SketchUp capture, use Computer Use to inspect SketchUp and capture the viewport.
+Start by creating a run folder with the helper script. Use a neutral project slug if the user does not provide one. If the user wants to work from an existing screenshot, copy it into `input/`; if they want a fresh SketchUp capture, use the runtime's desktop-control tool to inspect SketchUp and capture the viewport.
+
+Supported runtime modes:
+
+- **Codex full desktop mode:** Computer Use controls SketchUp, Chrome, Pinterest, and AI+SU.
+- **OpenClaw/Qclaw desktop/browser mode:** use OpenClaw/Qclaw's available browser, screenshot, or local automation tools. Do not mention Codex Computer Use as a dependency.
+- **No desktop mode:** ask the user to attach/export the white-model screenshot and continue from analysis, search queries, prompts, and optional image generation.
 
 Before any browser action, clarify the search mode:
 
@@ -42,6 +48,7 @@ Use normal viewing behavior:
 - Do not scrape hidden page data.
 - Do not bypass login prompts, CAPTCHAs, paywalls, or safety interstitials.
 - If login is required and not already approved, ask the user to handle login.
+- If the runtime cannot access the user's logged-in Pinterest session, produce search URLs/queries for the user and ask them to return selected Pin URLs or screenshots.
 
 For each candidate, capture:
 
@@ -81,6 +88,7 @@ Save each prompt as `prompts/NN_prompt.md`.
 Use the user's chosen generation chain:
 
 - If AI+SU is available, prefer pasting the screenshot into the chat box and sending the prompt there.
+- If OpenClaw/Qclaw has an image-generation skill such as a local design router or `nano-banana-pro`, adapt the prompt to that tool and save outputs into the run folder.
 - If the user has a different image generator, adapt the prompt format but keep the white-model constraints.
 - Save each result as `outputs/NN_render.png` or the actual returned extension.
 - If generation fails, save the error note in `outputs/NN_error.txt` and continue with the next prompt when reasonable.
@@ -92,4 +100,3 @@ Before finishing, check:
 - The count of approved inspiration directions is at least the requested target.
 - Each result can be mapped back to its prompt and inspiration note.
 - The final summary is usable by a designer: name the strongest directions, not only file paths.
-

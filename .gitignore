@@ -6,6 +6,7 @@ AI对话助手_使用说明.pdf
 # Generated packaging output
 dist/*
 !dist/AI+SU.rbz
+su-pinterest-runs/
 
 # SketchUp model backups and local scratch files
 *.skp
@@ -32,3 +33,4 @@ config.local.*
 Thumbs.db
 .vscode/
 .idea/
+__pycache__/
