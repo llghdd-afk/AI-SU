@@ -1,0 +1,4 @@
+interface:
+  display_name: "SU Pinterest Inspiration"
+  short_description: "Find Pinterest-style inspiration for SketchUp white models."
+  default_prompt: "Use $su-pinterest-inspiration to find 10+ inspiration directions from a SketchUp white-model screenshot and prepare rendering prompts."
