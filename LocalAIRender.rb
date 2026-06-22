@@ -6,7 +6,7 @@ require 'extensions.rb'
 module LLGHD
   module LocalAIRender
     EXTENSION_NAME = 'SU Local AI Render'
-    EXTENSION_VERSION = '0.4.26'
+    EXTENSION_VERSION = '0.4.27'
     EXTENSION_ID = 'llghd.local_ai_render'
 
     loader = File.join(__dir__, 'LocalAIRender', 'core.rb')

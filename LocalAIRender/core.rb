@@ -21,6 +21,7 @@ module LLGHD
     ROOT_DIR = File.dirname(PLUGIN_DIR)
     PINTEREST_WORKER_PORT = 17_862
     PINTEREST_WORKER_DEBUG_PORT = 17_863
+    PINTEREST_WORKER_VERSION = '0.4.8-worker-lens-search'
 
     class << self
       attr_reader :dialog
@@ -268,7 +269,13 @@ module LLGHD
           plan: plan,
           target_count: count
         )
-        references = fetch_online_pinterest_references(plan: plan, count: count, progress: progress)
+        references = fetch_online_pinterest_references(
+          plan: plan,
+          count: count,
+          progress: progress,
+          base_image_path: image_path,
+          use_lens: truthy?(payload['use_pinterest_lens'])
+        )
         references = enrich_pinterest_references(
           client: client,
           base_image_path: image_path,
@@ -1250,9 +1257,35 @@ module LLGHD
         saved
       end
 
-      def fetch_online_pinterest_references(plan:, count:, progress:)
+      def fetch_online_pinterest_references(plan:, count:, progress:, base_image_path: nil, use_lens: false)
         queries = Array(plan['pinterest_queries']).first(count)
+        lens_urls = []
+        if use_lens && File.file?(base_image_path.to_s)
+          emit_progress(
+            progress,
+            stage: 'pinterest_lens',
+            message: '正在把白模截图发送到 Pinterest Lens，增强结构相似灵感召回...',
+            target_count: count
+          )
+          lens_urls = pinterest_lens_image_urls(base_image_path.to_s, count: [count * 4, 12].max)
+          emit_progress(
+            progress,
+            stage: 'pinterest_lens',
+            message: lens_urls.empty? ? 'Pinterest Lens 未返回可用图片，继续使用文字搜索。' : "Pinterest Lens 返回 #{lens_urls.length} 张候选图，将与文字搜索结果合并。",
+            target_count: count,
+            lens_count: lens_urls.length
+          )
+        elsif use_lens
+          emit_progress(
+            progress,
+            stage: 'pinterest_lens',
+            message: '未找到可上传的白模截图，已跳过 Pinterest Lens 增强。',
+            target_count: count
+          )
+        end
+
         references = []
+        used_remote_urls = {}
         count.times do |offset|
           query_item = queries[offset].is_a?(Hash) ? queries[offset] : {}
           index = positive_int(query_item['index'], offset + 1)
@@ -1274,19 +1307,33 @@ module LLGHD
             index: index,
             query: query,
             search_url: search_url,
-            intent: query_item['intent'].to_s
+            intent: query_item['intent'].to_s,
+            lens_candidate_urls: lens_candidates_for_index(lens_urls, offset),
+            used_remote_urls: used_remote_urls
           )
         end
         references
       end
 
-      def fetch_one_pinterest_reference(index:, query:, search_url:, intent:)
-        urls = pinterest_image_urls(query)
+      def lens_candidates_for_index(lens_urls, offset)
+        urls = Array(lens_urls)
+        return [] if urls.empty?
+
+        primary = urls.drop(offset).first(8)
+        (primary + urls.first(8)).uniq
+      end
+
+      def fetch_one_pinterest_reference(index:, query:, search_url:, intent:, lens_candidate_urls: [], used_remote_urls: {})
+        lens_candidate_urls = Array(lens_candidate_urls).map(&:to_s).reject(&:empty?).uniq
+        lens_url_lookup = lens_candidate_urls.each_with_object({}) { |url, hash| hash[url] = true }
+        urls = (lens_candidate_urls + pinterest_image_urls(query)).uniq
         raise 'Pinterest 搜索页没有向当前工具请求暴露可下载的 pin 图片。' if urls.empty?
 
         last_error = nil
         urls.first(12).each do |remote_url|
           begin
+            next if used_remote_urls[remote_url]
+
             path = download_remote_image(
               remote_url,
               folder: 'inspiration_refs',
@@ -1295,6 +1342,7 @@ module LLGHD
             )
             next if File.size(path) < 8_000
 
+            used_remote_urls[remote_url] = true
             return {
               'index' => index,
               'name' => "Pinterest 灵感 #{index}",
@@ -1302,6 +1350,7 @@ module LLGHD
               'intent' => intent,
               'search_url' => search_url,
               'remote_url' => remote_url,
+              'source_kind' => lens_url_lookup[remote_url] ? 'pinterest_lens' : 'pinterest_text',
               'path' => path,
               'url' => file_url(path)
             }
@@ -1319,6 +1368,7 @@ module LLGHD
           'intent' => intent,
           'search_url' => search_url,
           'remote_url' => (defined?(urls) && urls.first ? urls.first.to_s : ''),
+          'source_kind' => 'pinterest_search',
           'path' => '',
           'url' => (defined?(urls) && urls.first ? urls.first.to_s : ''),
           'error' => e.message
@@ -1512,9 +1562,38 @@ module LLGHD
         []
       end
 
+      def pinterest_lens_image_urls(image_path, count:)
+        return [] unless File.file?(image_path.to_s)
+        return [] unless start_pinterest_worker
+
+        uri = URI("#{pinterest_worker_base_url}/lens-search")
+        request = Net::HTTP::Post.new(uri)
+        request['Content-Type'] = 'application/json'
+        request.body = JSON.generate(
+          image_path: image_path.to_s,
+          count: count.to_i
+        )
+        http = Net::HTTP.new(uri.host, uri.port, nil)
+        http.open_timeout = 3
+        http.read_timeout = 120
+        response = http.request(request)
+        return [] unless response.is_a?(Net::HTTPSuccess)
+
+        json = JSON.parse(response.body.to_s)
+        Array(json['urls']).map do |url|
+          normalize_pinimg_url(url.to_s.sub(%r{\?.*\z}, ''))
+        end.select do |url|
+          url =~ %r{\Ahttps://i\.pinimg\.com/.+\.(jpg|jpeg|png|webp)\z}i
+        end.uniq
+      rescue StandardError => e
+        warn "Pinterest Lens failed: #{e.message}" if $DEBUG
+        []
+      end
+
       def start_pinterest_worker
         return true if pinterest_worker_ready?
 
+        stop_stale_pinterest_worker if pinterest_worker_status
         script = File.join(PLUGIN_DIR, 'pinterest_worker.js')
         return false unless File.file?(script)
 
@@ -1543,10 +1622,34 @@ module LLGHD
       end
 
       def pinterest_worker_ready?
-        response = http_get_follow(URI("#{pinterest_worker_base_url}/status"), headers: {}, open_timeout: 1, read_timeout: 2)
-        response.is_a?(Net::HTTPSuccess)
+        status = pinterest_worker_status
+        status && status['worker_version'].to_s == PINTEREST_WORKER_VERSION
       rescue StandardError
         false
+      end
+
+      def pinterest_worker_status
+        response = http_get_follow(URI("#{pinterest_worker_base_url}/status"), headers: {}, open_timeout: 1, read_timeout: 2)
+        return nil unless response.is_a?(Net::HTTPSuccess)
+
+        JSON.parse(response.body.to_s)
+      rescue StandardError
+        nil
+      end
+
+      def stop_stale_pinterest_worker
+        command = <<~POWERSHELL
+          $connections = Get-NetTCPConnection -LocalPort #{PINTEREST_WORKER_PORT} -State Listen -ErrorAction SilentlyContinue
+          if ($connections) {
+            $connections | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object {
+              Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue
+            }
+          }
+        POWERSHELL
+        system('powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command)
+        sleep 1
+      rescue StandardError
+        nil
       end
 
       def node_command
@@ -1875,13 +1978,26 @@ module LLGHD
         extracted_prompt = version['style_summary'].to_s.strip if extracted_prompt.empty?
         summary = analysis['summary'].to_s.strip
         summary = version['style_summary'].to_s.strip if summary.empty?
+        source_kind = ref ? ref['source_kind'].to_s : ''
+        source_type = if source_kind == 'pinterest_lens'
+                        'pinterest_lens'
+                      elsif has_image
+                        'pinterest_online'
+                      elsif has_remote_image
+                        'pinterest_remote'
+                      elsif ref
+                        'pinterest_fetch_failed'
+                      else
+                        'pinterest_search'
+                      end
         key_points = normalize_key_points(
           analysis['key_points'].is_a?(Array) && !analysis['key_points'].empty? ? analysis['key_points'] : version['key_points'],
           extracted_prompt
         )
         {
           'index' => index,
-          'type' => has_image ? 'pinterest_online' : (has_remote_image ? 'pinterest_remote' : (ref ? 'pinterest_fetch_failed' : 'pinterest_search')),
+          'type' => source_type,
+          'source_kind' => source_kind,
           'title' => version['title'].to_s.empty? ? "灵感 #{index}" : version['title'].to_s,
           'summary' => summary,
           'extracted_prompt' => extracted_prompt,

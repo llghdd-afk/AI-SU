@@ -1433,6 +1433,10 @@
               <div class="online-note" id="inspirationRefStrip">
                 工具会根据白模总结自动在线搜索 Pinterest，并把获取到的灵感图与生成效果图配对展示。
               </div>
+              <label class="check-row">
+                <input type="checkbox" id="inspirationUseLens">
+                <span>启用 Pinterest Lens 视觉增强（会把白模截图上传给 Pinterest 用于临时图片搜索，不会发布为 Pin）</span>
+              </label>
               <div class="pinterest-verify" id="pinterestVerifyPanel">
                 <div class="pinterest-verify-status">
                   <span class="pinterest-dot" id="pinterestStatusDot"></span>
@@ -1818,6 +1822,7 @@
         inspirationInputPath: document.getElementById('inspirationInputPath'),
         inspirationCount: document.getElementById('inspirationCount'),
         inspirationPrompt: document.getElementById('inspirationPrompt'),
+        inspirationUseLens: document.getElementById('inspirationUseLens'),
         inspirationRefInput: document.getElementById('inspirationRefInput'),
         inspirationRefStrip: document.getElementById('inspirationRefStrip'),
         inspirationClearRefsBtn: document.getElementById('inspirationClearRefsBtn'),
@@ -1887,6 +1892,7 @@
           captured: 'capture',
           analyzing: 'analyze',
           pinterest_plan: 'pinterest',
+          pinterest_lens: 'pinterest',
           pinterest_fetch: 'pinterest',
           pinterest_images: 'pinterest',
           reference_analyzing: 'pinterest',
@@ -2233,11 +2239,11 @@
             '<div class="inspiration-card" data-inspiration-index="' + escapeAttr(item.index || '') + '">',
             '<header>',
             '<span>版本 ' + escapeAttr(item.index || '') + '</span>',
-            '<span>' + escapeAttr((source.type === 'pinterest_online' || source.type === 'pinterest_remote') ? '在线灵感图' : '在线获取状态') + '</span>',
+            '<span>' + escapeAttr(source.type === 'pinterest_lens' ? 'Lens 结构匹配' : ((source.type === 'pinterest_online' || source.type === 'pinterest_remote') ? '在线灵感图' : '在线获取状态')) + '</span>',
             '</header>',
             '<div class="comparison-pair">',
             '<div class="pair-pane">',
-            '<div class="label"><span>Pinterest 灵感</span><span>' + escapeAttr(source.reference_name || '') + '</span></div>',
+            '<div class="label"><span>' + escapeAttr(source.type === 'pinterest_lens' ? 'Pinterest Lens 灵感' : 'Pinterest 灵感') + '</span><span>' + escapeAttr(source.reference_name || '') + '</span></div>',
             '<div class="image-slot">' + inspirationSourceHtml(source, { compact: true, fallbackPrompt: prompt }) + '</div>',
             '</div>',
             '<div class="pair-pane">',
@@ -2827,6 +2833,7 @@
         payload.prompt = el.inspirationPrompt.value || '';
         payload.target_count = count;
         payload.force_capture = Boolean(el.inspirationForceCapture.checked);
+        payload.use_pinterest_lens = Boolean(el.inspirationUseLens.checked);
         payload.references = state.inspirationRefs;
         return payload;
       }

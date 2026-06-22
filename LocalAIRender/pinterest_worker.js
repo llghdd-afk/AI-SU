@@ -19,7 +19,7 @@ const port = Number(args.get('port') || 17862);
 const debugPort = Number(args.get('debug-port') || 17863);
 const profileDir = args.get('profile') || path.join(os.homedir(), 'AppData', 'Local', 'LLGHD', 'LocalAIRender', 'PinterestChrome');
 const chromePath = findChrome();
-const workerVersion = '0.4.7-worker-navigation-wait';
+const workerVersion = '0.4.8-worker-lens-search';
 
 function json(res, code, payload) {
   const body = JSON.stringify(payload);
@@ -37,6 +37,32 @@ function html(res, code, body) {
     'Cache-Control': 'no-store'
   });
   res.end(body);
+}
+
+function readJsonBody(req, maxBytes = 2 * 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.setEncoding('utf8');
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > maxBytes) {
+        reject(new Error('request body is too large'));
+        req.destroy();
+      }
+    });
+    req.on('end', () => {
+      if (!body.trim()) {
+        resolve({});
+        return;
+      }
+      try {
+        resolve(JSON.parse(body));
+      } catch (error) {
+        reject(new Error(`invalid JSON body: ${error.message}`));
+      }
+    });
+    req.on('error', reject);
+  });
 }
 
 function findChrome() {
@@ -210,6 +236,191 @@ async function pinterestSearch(query, count) {
   }
 }
 
+async function pinterestLensSearch(imagePath, count) {
+  const absoluteImagePath = path.resolve(String(imagePath || ''));
+  if (!fs.existsSync(absoluteImagePath)) {
+    throw new Error(`Lens image does not exist: ${absoluteImagePath}`);
+  }
+
+  const startUrl = 'https://www.pinterest.com/';
+  const session = await pageFor(startUrl).then((page) => page.connect());
+  try {
+    await session.send('Page.enable');
+    await session.send('Runtime.enable');
+    await session.send('DOM.enable');
+    await session.send('Page.navigate', { url: startUrl });
+    await waitForLocation(session, startUrl, 20000);
+
+    await focusPinterestSearch(session);
+    await clickLensEntry(session);
+    const uploaded = await waitAndSetPinterestFileInput(session, absoluteImagePath, 12000);
+    if (!uploaded) {
+      throw new Error('Pinterest Lens upload input was not found. Please confirm Pinterest web Lens is available in the dedicated Chrome profile.');
+    }
+
+    await wait(1800);
+    await clickLensSubmit(session);
+    await waitForPinterestImages(session, 28000);
+    for (let i = 0; i < 5; i += 1) {
+      await session.send('Runtime.evaluate', {
+        expression: 'window.scrollBy(0, Math.max(window.innerHeight * 1.4, 900));',
+        returnByValue: true
+      });
+      await wait(1200);
+    }
+    await waitForPinterestImages(session, 9000);
+    const expression = imageExtractionExpression(Math.max(count * 6, 40));
+    const result = await session.send('Runtime.evaluate', {
+      expression,
+      returnByValue: true,
+      awaitPromise: true
+    });
+    if (result.exceptionDetails) {
+      throw new Error(`Pinterest Lens extraction failed: ${exceptionText(result.exceptionDetails)}`);
+    }
+    const value = (result.result && result.result.value) || {};
+    const urls = Array.isArray(value) ? value : (Array.isArray(value.urls) ? value.urls : []);
+    return {
+      ok: true,
+      mode: 'lens',
+      source_image: absoluteImagePath,
+      image_count: Number(value.image_count || value.imageCount || 0),
+      pin_count: Number(value.pin_count || value.pinCount || urls.length || 0),
+      urls: urls.slice(0, Math.max(count * 3, count))
+    };
+  } finally {
+    session.close();
+  }
+}
+
+async function focusPinterestSearch(session) {
+  await session.send('Runtime.evaluate', {
+    expression: `(() => {
+      const input = Array.from(document.querySelectorAll('input, textarea')).find((node) => {
+        const text = [node.getAttribute('aria-label'), node.getAttribute('placeholder'), node.name, node.id].filter(Boolean).join(' ').toLowerCase();
+        return /search|搜索|查找|搜尋/.test(text);
+      });
+      if (input) {
+        input.focus();
+        input.click();
+        return { ok: true };
+      }
+      return { ok: false };
+    })()`,
+    returnByValue: true,
+    awaitPromise: true
+  }).catch(() => {});
+  await wait(500);
+}
+
+async function clickLensEntry(session) {
+  const result = await session.send('Runtime.evaluate', {
+    expression: `(() => {
+      const visible = (node) => {
+        const rect = node.getBoundingClientRect();
+        const style = getComputedStyle(node);
+        return rect.width > 8 && rect.height > 8 && style.visibility !== 'hidden' && style.display !== 'none';
+      };
+      const selectors = [
+        '[data-test-id*="lens" i]',
+        '[data-test-id*="visual" i]',
+        '[data-test-id*="camera" i]',
+        '[aria-label*="Lens" i]',
+        '[aria-label*="camera" i]',
+        '[aria-label*="image" i]',
+        '[aria-label*="photo" i]',
+        '[title*="Lens" i]',
+        '[title*="camera" i]',
+        '[title*="image" i]',
+        '[aria-label*="图片" i]',
+        '[aria-label*="图像" i]',
+        '[aria-label*="照片" i]',
+        '[aria-label*="相机" i]'
+      ];
+      const direct = selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector)));
+      const all = Array.from(document.querySelectorAll('button,[role="button"],a,label,div'));
+      const terms = /lens|camera|visual|image|photo|picture|upload|图片|图像|照片|相机|镜头|以图|上传/i;
+      const candidates = direct.concat(all.filter((node) => {
+        const text = [
+          node.getAttribute('aria-label'),
+          node.getAttribute('title'),
+          node.getAttribute('data-test-id'),
+          node.innerText
+        ].filter(Boolean).join(' ');
+        return terms.test(text);
+      }));
+      const seen = new Set();
+      for (const node of candidates) {
+        if (!node || seen.has(node)) continue;
+        seen.add(node);
+        if (!visible(node)) continue;
+        node.click();
+        return {
+          clicked: true,
+          tag: node.tagName,
+          text: [node.getAttribute('aria-label'), node.getAttribute('title'), node.getAttribute('data-test-id'), node.innerText].filter(Boolean).join(' ').slice(0, 120)
+        };
+      }
+      return { clicked: false };
+    })()`,
+    returnByValue: true,
+    awaitPromise: true
+  });
+  await wait(1000);
+  return (result.result && result.result.value) || {};
+}
+
+async function waitAndSetPinterestFileInput(session, imagePath, maxMs) {
+  const started = Date.now();
+  while (Date.now() - started < maxMs) {
+    if (await setPinterestFileInput(session, imagePath)) return true;
+    await wait(600);
+  }
+  return false;
+}
+
+async function setPinterestFileInput(session, imagePath) {
+  const documentResult = await session.send('DOM.getDocument', { depth: -1, pierce: true });
+  const rootId = documentResult.root && documentResult.root.nodeId;
+  if (!rootId) return false;
+  const selectorResult = await session.send('DOM.querySelector', {
+    nodeId: rootId,
+    selector: 'input[type="file"]'
+  });
+  if (!selectorResult.nodeId) return false;
+  await session.send('DOM.setFileInputFiles', {
+    nodeId: selectorResult.nodeId,
+    files: [imagePath]
+  });
+  return true;
+}
+
+async function clickLensSubmit(session) {
+  await session.send('Runtime.evaluate', {
+    expression: `(() => {
+      const visible = (node) => {
+        const rect = node.getBoundingClientRect();
+        const style = getComputedStyle(node);
+        return rect.width > 8 && rect.height > 8 && style.visibility !== 'hidden' && style.display !== 'none';
+      };
+      const terms = /search|submit|next|done|continue|搜索|查找|下一步|完成|继续/i;
+      const candidates = Array.from(document.querySelectorAll('button,[role="button"],a')).filter((node) => {
+        const text = [node.getAttribute('aria-label'), node.getAttribute('title'), node.getAttribute('data-test-id'), node.innerText].filter(Boolean).join(' ');
+        return visible(node) && terms.test(text);
+      });
+      const candidate = candidates[0];
+      if (candidate) {
+        candidate.click();
+        return { clicked: true };
+      }
+      return { clicked: false };
+    })()`,
+    returnByValue: true,
+    awaitPromise: true
+  }).catch(() => {});
+  await wait(1200);
+}
+
 function exceptionText(details) {
   if (!details) return 'unknown runtime exception';
   const description = details.exception && (details.exception.description || details.exception.value);
@@ -352,6 +563,15 @@ const server = http.createServer(async (req, res) => {
       const query = url.searchParams.get('q') || 'modern interior design inspiration';
       const count = Math.max(1, Math.min(24, Number(url.searchParams.get('count') || 8)));
       const payload = await pinterestSearch(query, count);
+      json(res, 200, payload);
+      return;
+    }
+
+    if (url.pathname === '/lens-search') {
+      const body = req.method === 'POST' ? await readJsonBody(req) : {};
+      const imagePath = body.image_path || url.searchParams.get('image_path') || '';
+      const count = Math.max(1, Math.min(36, Number(body.count || url.searchParams.get('count') || 12)));
+      const payload = await pinterestLensSearch(imagePath, count);
       json(res, 200, payload);
       return;
     }
