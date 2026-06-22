@@ -1256,6 +1256,31 @@
       min-height: 74px;
     }
 
+    .key-dropzone {
+      border: 1px dashed #b8c2d1;
+      border-radius: 8px;
+      background: #f8fafc;
+      padding: 18px;
+      color: var(--muted);
+      line-height: 1.7;
+      text-align: center;
+      transition: border-color 0.15s ease, background 0.15s ease;
+    }
+
+    .key-dropzone.drag-over {
+      border-color: var(--accent);
+      background: #fff4ed;
+      color: var(--accent-dark);
+    }
+
+    .key-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
     .settings-page.hidden {
       display: none;
     }
@@ -1442,6 +1467,21 @@
 
       <section class="settings-page hidden" id="settingsPage">
         <div class="settings-grid">
+          <section class="settings-panel wide">
+            <header>
+              <span>团队密钥包</span>
+            </header>
+            <p class="settings-note">把 `.aisukey.json` 拖到这里，会自动填写并保存图像接口、分析接口、模型和备用节点。导出的文件包含密钥，只适合团队内部私下传递。</p>
+            <div class="key-dropzone" id="keyDropzone">
+              拖入 AI+SU 密钥文件，或点击下方按钮选择文件
+              <div class="key-actions">
+                <button id="importKeyBtn">选择密钥文件</button>
+                <button id="exportKeyBtn">导出密钥文件</button>
+              </div>
+            </div>
+            <input class="hidden" id="keyFileInput" type="file" accept=".aisukey.json,application/json,.json">
+          </section>
+
           <section class="settings-panel">
             <header>
               <span>图像渲染通道</span>
@@ -1744,6 +1784,10 @@
         githubAsset: document.getElementById('githubAsset'),
         githubDirectUrl: document.getElementById('githubDirectUrl'),
         updatePluginBtn: document.getElementById('updatePluginBtn'),
+        keyDropzone: document.getElementById('keyDropzone'),
+        keyFileInput: document.getElementById('keyFileInput'),
+        importKeyBtn: document.getElementById('importKeyBtn'),
+        exportKeyBtn: document.getElementById('exportKeyBtn'),
         inputWrap: document.getElementById('inputWrap'),
         outputWrap: document.getElementById('outputWrap'),
         inputPath: document.getElementById('inputPath'),
@@ -1825,6 +1869,8 @@
         el.testApiBtn.disabled = isBusy;
         el.testTextApiBtn.disabled = isBusy;
         el.updatePluginBtn.disabled = isBusy;
+        el.importKeyBtn.disabled = isBusy;
+        el.exportKeyBtn.disabled = isBusy;
         el.loadMoreViewsBtn.disabled = isBusy || !state.sceneHasMore;
       }
 
@@ -2550,6 +2596,203 @@
         };
       }
 
+      function applySettingsToForm(settings) {
+        const data = settings || {};
+        const pairs = [
+          ['endpoint', el.endpoint],
+          ['api_key', el.apiKey],
+          ['model', el.model],
+          ['request_mode', el.requestMode],
+          ['text_endpoint', el.textEndpoint],
+          ['text_api_key', el.textApiKey],
+          ['planner_model', el.plannerModel],
+          ['reference_model', el.referenceModel],
+          ['backup_text_models', el.backupTextModels],
+          ['backup_text_endpoints', el.backupTextEndpoints],
+          ['backup_text_api_keys', el.backupTextApiKeys],
+          ['github_repo', el.githubRepo],
+          ['github_asset', el.githubAsset],
+          ['github_direct_url', el.githubDirectUrl],
+          ['output_dir', el.outputDir],
+          ['capture_width', el.width],
+          ['capture_height', el.height]
+        ];
+        pairs.forEach(function (pair) {
+          if (Object.prototype.hasOwnProperty.call(data, pair[0])) {
+            pair[1].value = data[pair[0]] == null ? '' : String(data[pair[0]]);
+          }
+        });
+      }
+
+      function normalizeKeyPackage(data) {
+        if (!data || typeof data !== 'object' || Array.isArray(data)) {
+          throw new Error('密钥文件不是有效 JSON 对象。');
+        }
+
+        const settings = Object.assign({}, data.settings || {});
+        const channels = data.channels || {};
+        const image = channels.image || data.image || {};
+        const analysis = channels.analysis || data.analysis || {};
+        const backup = channels.backup_analysis || channels.backup || data.backup_analysis || {};
+        const runtime = data.runtime || {};
+        const github = data.github || {};
+
+        if (image.endpoint != null) settings.endpoint = image.endpoint;
+        if (image.api_key != null) settings.api_key = image.api_key;
+        if (image.model != null) settings.model = image.model;
+        if (image.request_mode != null) settings.request_mode = image.request_mode;
+
+        if (analysis.endpoint != null) settings.text_endpoint = analysis.endpoint;
+        if (analysis.api_key != null) settings.text_api_key = analysis.api_key;
+        if (analysis.planner_model != null) settings.planner_model = analysis.planner_model;
+        if (analysis.reference_model != null) settings.reference_model = analysis.reference_model;
+        if (analysis.backup_models != null) {
+          settings.backup_text_models = Array.isArray(analysis.backup_models)
+            ? analysis.backup_models.join(',')
+            : analysis.backup_models;
+        }
+
+        if (backup.endpoints != null) {
+          settings.backup_text_endpoints = Array.isArray(backup.endpoints)
+            ? backup.endpoints.join('\n')
+            : backup.endpoints;
+        }
+        if (backup.api_keys != null) {
+          settings.backup_text_api_keys = Array.isArray(backup.api_keys)
+            ? backup.api_keys.join('\n')
+            : backup.api_keys;
+        }
+
+        if (runtime.output_dir != null) settings.output_dir = runtime.output_dir;
+        if (runtime.capture_width != null) settings.capture_width = runtime.capture_width;
+        if (runtime.capture_height != null) settings.capture_height = runtime.capture_height;
+
+        if (github.repo != null) settings.github_repo = github.repo;
+        if (github.asset != null) settings.github_asset = github.asset;
+        if (github.direct_url != null) settings.github_direct_url = github.direct_url;
+
+        const knownKeys = [
+          'endpoint',
+          'api_key',
+          'model',
+          'request_mode',
+          'text_endpoint',
+          'text_api_key',
+          'planner_model',
+          'reference_model',
+          'backup_text_models',
+          'backup_text_endpoints',
+          'backup_text_api_keys',
+          'github_repo',
+          'github_asset',
+          'github_direct_url',
+          'output_dir',
+          'capture_width',
+          'capture_height'
+        ];
+        const picked = {};
+        knownKeys.forEach(function (key) {
+          if (Object.prototype.hasOwnProperty.call(settings, key)) picked[key] = settings[key];
+        });
+        if (!Object.keys(picked).length) throw new Error('密钥文件里没有可识别的 AI+SU 设置字段。');
+        return picked;
+      }
+
+      function importKeyPackage(data, sourceName) {
+        const settings = normalizeKeyPackage(data);
+        applySettingsToForm(settings);
+        setStatus('已导入密钥文件：' + (sourceName || 'aisukey') + '，正在保存...');
+        setBusy(true);
+        callRuby('save_settings', settingsPayload());
+      }
+
+      function readKeyFile(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function () {
+          try {
+            importKeyPackage(JSON.parse(String(reader.result || '{}')), file.name);
+          } catch (error) {
+            setBusy(false);
+            setStatus(error.message || '密钥文件解析失败。', true);
+          } finally {
+            el.keyFileInput.value = '';
+            el.keyDropzone.classList.remove('drag-over');
+          }
+        };
+        reader.onerror = function () {
+          setBusy(false);
+          setStatus('密钥文件读取失败。', true);
+          el.keyFileInput.value = '';
+          el.keyDropzone.classList.remove('drag-over');
+        };
+        reader.readAsText(file, 'utf-8');
+      }
+
+      function exportKeyPackage() {
+        const settings = settingsPayload();
+        const backupModels = settings.backup_text_models
+          .split(/[,，\s]+/)
+          .map(function (item) { return item.trim(); })
+          .filter(Boolean);
+        const backupEndpoints = settings.backup_text_endpoints
+          .split(/[\r\n]+/)
+          .map(function (item) { return item.trim(); })
+          .filter(Boolean);
+        const backupKeys = settings.backup_text_api_keys
+          .split(/[\r\n]+/)
+          .map(function (item) { return item.trim(); });
+        const payload = {
+          schema: 'ai-su.aisukey',
+          schema_version: 1,
+          exported_at: new Date().toISOString(),
+          app: 'AI+SU LocalAIRender',
+          warning: '包含 API Key，仅限团队内部私下传递，不要提交到 GitHub 或公开聊天。',
+          channels: {
+            image: {
+              endpoint: settings.endpoint,
+              api_key: settings.api_key,
+              model: settings.model,
+              request_mode: settings.request_mode
+            },
+            analysis: {
+              endpoint: settings.text_endpoint,
+              api_key: settings.text_api_key,
+              planner_model: settings.planner_model,
+              reference_model: settings.reference_model,
+              backup_models: backupModels
+            },
+            backup_analysis: {
+              endpoints: backupEndpoints,
+              api_keys: backupKeys
+            }
+          },
+          github: {
+            repo: settings.github_repo,
+            asset: settings.github_asset,
+            direct_url: settings.github_direct_url
+          },
+          runtime: {
+            output_dir: settings.output_dir,
+            capture_width: settings.capture_width,
+            capture_height: settings.capture_height
+          },
+          settings: settings
+        };
+        const text = JSON.stringify(payload, null, 2);
+        const blob = new Blob([text], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
+        anchor.href = url;
+        anchor.download = 'ai-su-team-private-' + stamp + '.aisukey.json';
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+        setStatus('已导出团队密钥文件，请只在内部私下分享。');
+      }
+
       function renderPayload() {
         return {
           prompt: el.prompt.value,
@@ -3019,6 +3262,42 @@
         setBusy(true);
         setStatus('正在从 GitHub 拉取更新...');
         callRuby('update_plugin', settingsPayload());
+      });
+
+      el.importKeyBtn.addEventListener('click', function () {
+        el.keyFileInput.click();
+      });
+
+      el.exportKeyBtn.addEventListener('click', function () {
+        exportKeyPackage();
+      });
+
+      el.keyFileInput.addEventListener('change', function () {
+        const file = el.keyFileInput.files && el.keyFileInput.files[0];
+        readKeyFile(file);
+      });
+
+      ['dragenter', 'dragover'].forEach(function (eventName) {
+        el.keyDropzone.addEventListener(eventName, function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          el.keyDropzone.classList.add('drag-over');
+        });
+      });
+
+      ['dragleave', 'dragend'].forEach(function (eventName) {
+        el.keyDropzone.addEventListener(eventName, function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          el.keyDropzone.classList.remove('drag-over');
+        });
+      });
+
+      el.keyDropzone.addEventListener('drop', function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+        readKeyFile(file);
       });
 
       el.renderBtn.addEventListener('click', function () {
