@@ -1,0 +1,3249 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SU Local AI Render</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --line: #e7e9ee;
+      --text: #1c2430;
+      --muted: #6b7280;
+      --accent: #f15a24;
+      --accent-dark: #d84816;
+      --good: #0f9f6e;
+      --bad: #c2410c;
+      --shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-width: 780px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+      font-size: 14px;
+    }
+
+    button,
+    input,
+    textarea,
+    select {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      border-radius: 8px;
+      background: #eef1f5;
+      color: var(--text);
+      cursor: pointer;
+      min-height: 38px;
+      padding: 0 14px;
+    }
+
+    button:hover {
+      background: #e4e8ef;
+    }
+
+    button.primary {
+      background: var(--accent);
+      color: #fff;
+      font-weight: 600;
+    }
+
+    button.primary:hover {
+      background: var(--accent-dark);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 330px 1fr;
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      background: var(--panel);
+      border-right: 1px solid var(--line);
+      padding: 18px 14px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 18px;
+      padding: 0 4px;
+      font-weight: 700;
+      font-size: 16px;
+    }
+
+    .mark {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 800;
+    }
+
+    .nav-stack {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 10px;
+      min-height: 42px;
+      border: 1px solid var(--line);
+      background: #fff;
+      font-weight: 700;
+    }
+
+    .nav-item.active {
+      border-color: rgba(241, 90, 36, 0.28);
+      background: #fff4ed;
+      color: var(--accent-dark);
+    }
+
+    .section {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      margin-bottom: 12px;
+      padding: 12px;
+    }
+
+    .section h2 {
+      margin: 0 0 10px;
+      font-size: 13px;
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .row > * {
+      flex: 1 1 0;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .field label {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    input,
+    textarea,
+    select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+      outline: none;
+      padding: 10px;
+    }
+
+    textarea {
+      min-height: 118px;
+      resize: vertical;
+      line-height: 1.6;
+    }
+
+    #inspirationPrompt {
+      min-height: 58px;
+      max-height: 120px;
+    }
+
+    details summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
+
+    .main {
+      padding: 18px;
+      min-width: 0;
+    }
+
+    body.mode-inspiration .main {
+      background: #eef3f2;
+    }
+
+    body.mode-inspiration .topbar strong {
+      color: #14534a;
+    }
+
+    body.mode-inspiration .inspiration-panel,
+    body.mode-inspiration .inspiration-results {
+      border-color: #cbded9;
+    }
+
+    body.mode-settings .main {
+      background: #f2f4f7;
+    }
+
+    body.mode-settings .topbar strong {
+      color: #243447;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .status {
+      color: var(--muted);
+      font-size: 13px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr);
+      gap: 14px;
+    }
+
+    .preview {
+      min-height: 420px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .preview header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      font-weight: 700;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .header-actions button {
+      min-height: 32px;
+      padding: 0 12px;
+    }
+
+    .image-wrap {
+      display: grid;
+      place-items: center;
+      min-height: 350px;
+      padding: 14px;
+      background:
+        linear-gradient(45deg, #f2f3f5 25%, transparent 25%),
+        linear-gradient(-45deg, #f2f3f5 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #f2f3f5 75%),
+        linear-gradient(-45deg, transparent 75%, #f2f3f5 75%);
+      background-size: 18px 18px;
+      background-position: 0 0, 0 9px, 9px -9px, -9px 0;
+    }
+
+    .image-wrap img {
+      max-width: 100%;
+      max-height: 520px;
+      border-radius: 6px;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.16);
+      background: #fff;
+    }
+
+    .result-card {
+      position: relative;
+      max-width: 100%;
+      max-height: 520px;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.16);
+      background: #fff;
+    }
+
+    .result-card img {
+      display: block;
+      max-width: 100%;
+      max-height: 520px;
+      border-radius: 0;
+      box-shadow: none;
+    }
+
+    .result-card:hover .result-toolbar,
+    .result-card:focus-within .result-toolbar {
+      opacity: 1;
+      transform: translate(-50%, 0);
+      pointer-events: auto;
+    }
+
+    .result-toolbar {
+      position: absolute;
+      left: 50%;
+      bottom: 10px;
+      display: flex;
+      gap: 2px;
+      padding: 5px;
+      border-radius: 8px;
+      background: rgba(31, 41, 55, 0.86);
+      opacity: 0;
+      transform: translate(-50%, 6px);
+      transition: opacity 0.16s ease, transform 0.16s ease;
+      pointer-events: none;
+    }
+
+    .result-tool {
+      width: 34px;
+      min-height: 30px;
+      padding: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .result-tool:hover {
+      background: rgba(255, 255, 255, 0.16);
+    }
+
+    .result-tool.primary-action {
+      color: #ff8a3d;
+    }
+
+    .history-panel,
+    .help-panel {
+      margin-top: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .history-panel header,
+    .help-panel header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      font-weight: 700;
+    }
+
+    .history-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 10px;
+      padding: 12px;
+      max-height: 260px;
+      overflow: auto;
+      background: #fbfcfd;
+    }
+
+    .history-item {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      overflow: hidden;
+      cursor: pointer;
+    }
+
+    .history-item.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(241, 90, 36, 0.12);
+    }
+
+    .history-item img {
+      width: 100%;
+      aspect-ratio: 16 / 10;
+      object-fit: cover;
+      display: block;
+      background: #eef1f5;
+    }
+
+    .history-meta {
+      padding: 8px;
+      display: grid;
+      gap: 3px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .history-meta strong {
+      color: var(--text);
+      font-size: 13px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .help-content {
+      display: grid;
+      gap: 14px;
+      padding: 16px;
+      line-height: 1.75;
+      color: #374151;
+    }
+
+    .help-content h2 {
+      margin: 0;
+      font-size: 18px;
+      color: var(--text);
+    }
+
+    .help-content h3 {
+      margin: 0 0 4px;
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    .help-content p {
+      margin: 0;
+    }
+
+    .help-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+    }
+
+    .help-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fbfcfd;
+    }
+
+    .preview-modal-panel {
+      width: min(920px, calc(100vw - 36px));
+      max-height: min(760px, calc(100vh - 36px));
+      display: grid;
+      grid-template-rows: auto minmax(240px, 1fr) auto;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+      overflow: hidden;
+    }
+
+    .preview-stage {
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      background: #111827;
+      min-height: 360px;
+      overflow: auto;
+    }
+
+    .preview-stage img {
+      max-width: 100%;
+      max-height: 620px;
+      border-radius: 6px;
+      background: #fff;
+    }
+
+    .preview-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      padding: 12px 16px 16px;
+    }
+
+    .empty {
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.6;
+    }
+
+    .path {
+      padding: 10px 14px;
+      color: var(--muted);
+      font-size: 12px;
+      word-break: break-all;
+      border-top: 1px solid var(--line);
+      background: #fbfcfd;
+    }
+
+    .camera-box {
+      margin-top: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    .camera-box header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      font-weight: 700;
+    }
+
+    pre {
+      margin: 0;
+      max-height: 180px;
+      overflow: auto;
+      padding: 12px;
+      color: #334155;
+      font-size: 12px;
+      line-height: 1.55;
+      background: #fbfcfd;
+    }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background: rgba(15, 23, 42, 0.48);
+      z-index: 20;
+    }
+
+    .modal-panel {
+      width: min(660px, calc(100vw - 36px));
+      max-height: min(560px, calc(100vh - 36px));
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+      overflow: hidden;
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 20px 10px;
+    }
+
+    .modal-title {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+
+    .modal-title strong {
+      font-size: 18px;
+    }
+
+    .modal-title span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .icon-btn {
+      flex: 0 0 auto;
+      width: 36px;
+      min-height: 36px;
+      padding: 0;
+      border-radius: 50%;
+      font-size: 24px;
+      line-height: 1;
+      color: var(--muted);
+      background: transparent;
+    }
+
+    .view-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      overflow: auto;
+      padding: 14px 20px 20px;
+    }
+
+    .view-card {
+      position: relative;
+      border: 2px solid transparent;
+      border-radius: 8px;
+      background: #eef1f5;
+      overflow: hidden;
+      cursor: pointer;
+      aspect-ratio: 16 / 9;
+    }
+
+    .view-card.selected {
+      border-color: var(--accent);
+    }
+
+    .view-card img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+    }
+
+    .view-card .name {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 20px 8px 8px;
+      color: #fff;
+      font-weight: 700;
+      text-align: center;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+      background: linear-gradient(to top, rgba(0, 0, 0, 0.62), rgba(0, 0, 0, 0));
+    }
+
+    .view-card .check {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      display: none;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      text-align: center;
+      line-height: 22px;
+      font-weight: 700;
+      box-shadow: 0 2px 7px rgba(0, 0, 0, 0.24);
+    }
+
+    .view-card.selected .check {
+      display: block;
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: center;
+      padding: 0 20px 18px;
+    }
+
+    .modal-footer button {
+      min-width: 160px;
+      min-height: 44px;
+    }
+
+    .inspiration-page {
+      display: grid;
+      gap: 14px;
+    }
+
+    .inspiration-layout {
+      display: grid;
+      grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1.1fr);
+      gap: 14px;
+    }
+
+    .inspiration-panel,
+    .inspiration-results {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .inspiration-panel header,
+    .inspiration-results header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      font-weight: 700;
+    }
+
+    .inspiration-body {
+      display: grid;
+      gap: 12px;
+      padding: 12px;
+    }
+
+    .inspiration-preview {
+      display: grid;
+      place-items: center;
+      min-height: 250px;
+      border: 1px dashed #cfd6df;
+      border-radius: 8px;
+      background:
+        linear-gradient(45deg, #f2f3f5 25%, transparent 25%),
+        linear-gradient(-45deg, #f2f3f5 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #f2f3f5 75%),
+        linear-gradient(-45deg, transparent 75%, #f2f3f5 75%);
+      background-size: 18px 18px;
+      background-position: 0 0, 0 9px, 9px -9px, -9px 0;
+      padding: 12px;
+    }
+
+    .inspiration-preview img {
+      max-width: 100%;
+      max-height: 320px;
+      border-radius: 6px;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.16);
+      background: #fff;
+    }
+
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .check-row input {
+      width: auto;
+    }
+
+    .reference-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+      gap: 8px;
+      min-height: 72px;
+    }
+
+    .online-note {
+      border: 1px solid #cbded9;
+      border-radius: 8px;
+      padding: 10px 12px;
+      color: #28534d;
+      background: #f4fbf8;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .pinterest-verify {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      display: grid;
+      gap: 10px;
+      background: #fff;
+    }
+
+    .pinterest-verify-status {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .pinterest-verify-status strong {
+      display: block;
+      color: var(--text);
+      font-size: 13px;
+      margin-bottom: 2px;
+    }
+
+    .pinterest-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-top: 5px;
+      background: #94a3b8;
+      box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.14);
+      flex: 0 0 auto;
+    }
+
+    .pinterest-dot.checking {
+      background: #d97706;
+      box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.14);
+    }
+
+    .pinterest-dot.ready {
+      background: var(--good);
+      box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.14);
+    }
+
+    .pinterest-dot.blocked,
+    .pinterest-dot.error {
+      background: var(--bad);
+      box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.14);
+    }
+
+    .pinterest-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .reference-thumb {
+      position: relative;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fbfcfd;
+      aspect-ratio: 1 / 1;
+    }
+
+    .reference-thumb img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+    }
+
+    .reference-remove {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 24px;
+      min-height: 24px;
+      padding: 0;
+      border-radius: 50%;
+      background: rgba(15, 23, 42, 0.76);
+      color: #fff;
+      line-height: 1;
+    }
+
+    .inspiration-result-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 12px;
+      padding: 12px;
+      max-height: 520px;
+      overflow: auto;
+      background: #f4f6f8;
+    }
+
+    .inspiration-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    .inspiration-card header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 10px 0;
+      font-weight: 700;
+    }
+
+    .inspiration-card.failed {
+      border-color: rgba(194, 65, 12, 0.34);
+    }
+
+    .inspiration-card.pending {
+      border-color: rgba(37, 99, 235, 0.24);
+      background: #f8fbff;
+    }
+
+    .pending-slot {
+      display: grid;
+      place-items: center;
+      min-height: 180px;
+      padding: 18px;
+      color: var(--muted);
+      background: #edf4ff;
+      font-size: 13px;
+      text-align: center;
+    }
+
+    .inspiration-card img {
+      width: 100%;
+      aspect-ratio: 16 / 10;
+      display: block;
+      object-fit: cover;
+      background: #eef1f5;
+      cursor: pointer;
+    }
+
+    .comparison-pair {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      padding: 10px;
+    }
+
+    .pair-pane {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fbfcfd;
+    }
+
+    .pair-pane .label {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 7px 8px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .pair-pane .image-slot {
+      display: grid;
+      place-items: center;
+      min-height: 150px;
+      background: #eef1f5;
+    }
+
+    .pair-pane .image-slot img {
+      width: 100%;
+      height: 150px;
+      aspect-ratio: auto;
+      object-fit: cover;
+      display: block;
+    }
+
+    .source-placeholder {
+      min-height: 150px;
+      display: grid;
+      align-content: center;
+      gap: 8px;
+      padding: 12px;
+      color: #475569;
+      font-size: 12px;
+      line-height: 1.5;
+      background: #fff7ed;
+    }
+
+    .source-placeholder strong {
+      color: var(--accent-dark);
+      font-size: 13px;
+    }
+
+    .annotated-source {
+      display: grid;
+      gap: 8px;
+      width: 100%;
+      min-width: 0;
+    }
+
+    .annotation-frame {
+      position: relative;
+      width: 100%;
+      overflow: hidden;
+      border-radius: 6px;
+      background: #0f172a;
+    }
+
+    .annotation-frame img {
+      width: 100%;
+      display: block;
+    }
+
+    .annotation-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .annotation-pin {
+      position: absolute;
+      transform: translate(-10px, -10px);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 180px;
+      color: #fff;
+      text-align: left;
+      filter: drop-shadow(0 4px 10px rgba(15, 23, 42, 0.42));
+    }
+
+    .annotation-dot {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 2px solid #fff;
+      background: #f97316;
+      box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.24);
+      flex: 0 0 auto;
+    }
+
+    .annotation-label {
+      padding: 4px 7px;
+      border-radius: 6px;
+      background: rgba(15, 23, 42, 0.82);
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+
+    .annotation-frame.compact .annotation-label {
+      display: none;
+    }
+
+    .annotations-hidden .annotation-layer {
+      display: none;
+    }
+
+    .source-prompt {
+      display: grid;
+      gap: 7px;
+      padding: 9px;
+      border: 1px solid rgba(148, 163, 184, 0.22);
+      border-radius: 8px;
+      background: rgba(15, 23, 42, 0.72);
+      color: #dbe4ee;
+      text-align: left;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .source-prompt strong {
+      color: #fff;
+      font-size: 12px;
+    }
+
+    .key-point-list {
+      display: grid;
+      gap: 5px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .key-point-list li {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 6px;
+    }
+
+    .key-point-list b {
+      color: #fed7aa;
+      font-weight: 700;
+    }
+
+    .inspiration-meta {
+      display: grid;
+      gap: 4px;
+      padding: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .inspiration-meta strong {
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .inspiration-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 0 10px 10px;
+    }
+
+    .inspiration-actions button {
+      flex: 1 1 auto;
+      min-height: 32px;
+      padding: 0 10px;
+      font-size: 12px;
+    }
+
+    .inspiration-actions .primary {
+      flex-basis: 100%;
+    }
+
+    .flow-list {
+      display: grid;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .flow-step {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+
+    .flow-dot {
+      flex: 0 0 auto;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: #eef1f5;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .flow-step.active .flow-dot {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .inspiration-plan {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .plan-summary {
+      color: #334155;
+      line-height: 1.65;
+      font-size: 13px;
+    }
+
+    .query-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+      gap: 8px;
+    }
+
+    .query-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px;
+      display: grid;
+      gap: 6px;
+      background: #fbfcfd;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .query-card strong {
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .query-card button {
+      min-height: 30px;
+      padding: 0 10px;
+    }
+
+    .compare-modal-panel {
+      width: min(1040px, calc(100vw - 36px));
+      max-height: min(800px, calc(100vh - 36px));
+      display: grid;
+      grid-template-rows: auto minmax(260px, 1fr) auto;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+      overflow: hidden;
+    }
+
+    .compare-stage {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: var(--line);
+      overflow: auto;
+    }
+
+    .compare-pane {
+      display: grid;
+      grid-template-rows: auto minmax(220px, 1fr);
+      min-width: 0;
+      background: #111827;
+    }
+
+    .compare-pane header {
+      padding: 10px 12px;
+      color: #fff;
+      font-weight: 700;
+      background: #1f2937;
+    }
+
+    .compare-image {
+      display: grid;
+      place-items: center;
+      padding: 14px;
+      min-height: 360px;
+      color: #d1d5db;
+      line-height: 1.6;
+      text-align: center;
+    }
+
+    .compare-image img {
+      max-width: 100%;
+      max-height: 620px;
+      border-radius: 6px;
+      background: #fff;
+    }
+
+    .compare-image .annotated-source {
+      max-width: 100%;
+      width: min(100%, 720px);
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .settings-page {
+      display: grid;
+      gap: 12px;
+    }
+
+    .settings-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .settings-panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 14px;
+    }
+
+    .settings-panel.wide {
+      grid-column: 1 / -1;
+    }
+
+    .settings-panel header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+      font-weight: 700;
+    }
+
+    .settings-note {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+      margin: -2px 0 10px;
+    }
+
+    textarea.compact {
+      min-height: 74px;
+    }
+
+    .settings-page.hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="mark">AI</div>
+        <div>SU 本地 AI 渲染</div>
+      </div>
+
+      <nav class="nav-stack">
+        <button class="nav-item active" id="renderNavBtn">材质渲染</button>
+        <button class="nav-item" id="inspirationNavBtn">灵感爆发</button>
+        <button class="nav-item" id="settingsNavBtn">设置</button>
+        <button class="nav-item" id="helpNavBtn">帮助中心</button>
+      </nav>
+
+      <section class="section render-sidebar-section">
+        <h2>图像来源</h2>
+        <div class="row">
+          <button id="captureBtn">获取模型截图</button>
+          <button id="cameraBtn">获取相机视角</button>
+        </div>
+        <div class="field" style="margin-top: 10px;">
+          <input id="fileInput" type="file" accept="image/*">
+        </div>
+      </section>
+
+      <section class="section render-sidebar-section">
+        <h2>创意描述</h2>
+        <textarea id="prompt" placeholder="例如：将模型图生成写实室内效果图，现代中古风客厅，午后暖阳，奶油色墙面，木地板，照片级质感，极致材质细节。"></textarea>
+        <button class="primary" id="renderBtn" style="width: 100%; margin-top: 10px;">开始生成</button>
+      </section>
+
+      <section class="section inspiration-sidebar-section hidden" id="inspirationSidebar">
+        <h2>灵感流程</h2>
+        <div class="flow-list" id="inspirationFlow">
+          <div class="flow-step active" data-flow-stage="capture">
+            <span class="flow-dot">1</span>
+            <span>白模截图</span>
+          </div>
+          <div class="flow-step" data-flow-stage="analyze">
+            <span class="flow-dot">2</span>
+            <span>多模态总结空间</span>
+          </div>
+          <div class="flow-step" data-flow-stage="pinterest">
+            <span class="flow-dot">3</span>
+            <span>在线获取 Pinterest 灵感</span>
+          </div>
+          <div class="flow-step" data-flow-stage="render">
+            <span class="flow-dot">4</span>
+            <span>image-2 批量渲染</span>
+          </div>
+        </div>
+      </section>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <strong id="workspaceTitle">材质渲染工作区</strong>
+        <div class="status" id="status">等待 SketchUp 连接...</div>
+      </div>
+
+      <div id="renderPage">
+        <div class="workspace">
+          <section class="preview">
+            <header>
+              <span>输入图</span>
+              <button id="openInputBtn" disabled>打开</button>
+            </header>
+            <div class="image-wrap" id="inputWrap">
+              <div class="empty">先获取模型截图，或上传一张参考图</div>
+            </div>
+            <div class="path" id="inputPath">-</div>
+          </section>
+
+          <section class="preview">
+            <header>
+              <span>生成结果</span>
+              <div class="header-actions">
+                <button id="previewOutputBtn" disabled>预览</button>
+                <button id="openOutputBtn" disabled>打开</button>
+              </div>
+            </header>
+            <div class="image-wrap" id="outputWrap">
+              <div class="empty">生成后会显示在这里</div>
+            </div>
+            <div class="path" id="outputPath">-</div>
+          </section>
+        </div>
+
+        <section class="history-panel">
+          <header>
+            <span>生成历史</span>
+            <button id="refreshHistoryBtn">刷新</button>
+          </header>
+          <div class="history-list" id="historyList">
+            <div class="empty">生成后会自动保存历史</div>
+          </div>
+        </section>
+
+        <section class="camera-box">
+          <header>
+            <span>相机视角 JSON</span>
+            <button id="copyCameraBtn">复制</button>
+          </header>
+          <pre id="cameraJson">{}</pre>
+        </section>
+      </div>
+
+      <section class="inspiration-page hidden" id="inspirationPage">
+        <div class="inspiration-layout">
+          <section class="inspiration-panel">
+            <header>
+              <span>白模基础图</span>
+              <button id="inspirationCaptureBtn">重新截取</button>
+            </header>
+            <div class="inspiration-body">
+              <div class="inspiration-preview" id="inspirationInputWrap">
+                <div class="empty">生成前会使用当前 SketchUp 视口截图</div>
+              </div>
+              <div class="path" id="inspirationInputPath">-</div>
+              <label class="check-row">
+                <input type="checkbox" id="inspirationForceCapture" checked>
+                <span>生成前使用当前 SU 视口重新截图</span>
+              </label>
+            </div>
+          </section>
+
+          <section class="inspiration-panel">
+            <header>
+              <span>灵感设置</span>
+              <button class="hidden" id="inspirationClearRefsBtn">清空参考</button>
+            </header>
+            <div class="inspiration-body">
+              <div class="row">
+                <div class="field">
+                  <label for="inspirationCount">版本数量</label>
+                  <input id="inspirationCount" type="number" min="2" max="12" step="1" value="4">
+                </div>
+              </div>
+              <div class="field">
+                <label for="inspirationPrompt">项目偏好（可选）</label>
+                <textarea id="inspirationPrompt" placeholder="可以留空。只在需要限定项目类型、客户喜好、预算感、品牌调性或禁忌方向时填写；主依据仍然是白模截图自动总结。"></textarea>
+              </div>
+              <input class="hidden" id="inspirationRefInput" type="file" accept="image/*" multiple>
+              <div class="online-note" id="inspirationRefStrip">
+                工具会根据白模总结自动在线搜索 Pinterest，并把获取到的灵感图与生成效果图配对展示。
+              </div>
+              <div class="pinterest-verify" id="pinterestVerifyPanel">
+                <div class="pinterest-verify-status">
+                  <span class="pinterest-dot" id="pinterestStatusDot"></span>
+                  <div>
+                    <strong id="pinterestStatusTitle">Pinterest 未验证</strong>
+                    <span id="pinterestStatusText">首次使用需要在插件专用 Chrome 里登录 Pinterest；之后工具会自动在线获取网站灵感图。</span>
+                  </div>
+                </div>
+                <div class="pinterest-actions">
+                  <button id="pinterestVerifyBtn">验证 Pinterest</button>
+                  <button id="pinterestLoginBtn">打开 Pinterest 登录</button>
+                </div>
+              </div>
+              <button class="primary" id="inspirationGenerateBtn">开始灵感爆发</button>
+              <button id="inspirationResumeBtn">补齐未完成</button>
+              <button class="hidden" id="inspirationCancelBtn">停止当前任务</button>
+            </div>
+          </section>
+        </div>
+
+        <section class="inspiration-results">
+          <header>
+            <span>批量效果图</span>
+            <span id="inspirationSummary" class="status">等待生成</span>
+          </header>
+          <div class="inspiration-plan hidden" id="inspirationPlan"></div>
+          <div class="inspiration-result-grid" id="inspirationResults">
+            <div class="empty">会按选择数量生成 2-12 个版本，并自动保存到历史</div>
+          </div>
+        </section>
+      </section>
+
+      <section class="settings-page hidden" id="settingsPage">
+        <div class="settings-grid">
+          <section class="settings-panel">
+            <header>
+              <span>图像渲染通道</span>
+              <div class="header-actions">
+                <button id="builtinChannelBtn">内置渠道</button>
+                <button id="testApiBtn">测试图像</button>
+              </div>
+            </header>
+            <p class="settings-note">用于材质渲染和灵感爆发最后生成效果图。当前推荐 fucheers 的 gpt-image-2，白模截图会作为基础图一起发送。</p>
+            <div class="field">
+              <label for="endpoint">图像接口地址</label>
+              <input id="endpoint" placeholder="https://www.fucheers.top/v1/images/edits">
+            </div>
+            <div class="field">
+              <label for="apiKey">图像接口 Key</label>
+              <input id="apiKey" type="password" autocomplete="off">
+            </div>
+            <div class="row">
+              <div class="field">
+                <label for="model">图像模型</label>
+                <input id="model" placeholder="gpt-image-2">
+              </div>
+              <div class="field">
+                <label for="requestMode">请求格式</label>
+                <select id="requestMode">
+                  <option value="openai_image_edit_multipart">OpenAI 图像编辑 Multipart</option>
+                  <option value="custom_json">自定义 JSON</option>
+                  <option value="openai_image_edit_json">OpenAI 图像编辑 JSON</option>
+                </select>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-panel">
+            <header>
+              <span>文本/多模态分析通道</span>
+              <button id="testTextApiBtn">测试分析</button>
+            </header>
+            <p class="settings-note">用于白模总结、Pinterest 搜索词规划、灵感图反推。mimo-v2.5、gpt-5.5 这类模型都填在这里；如果模型不支持图片，会自动文本降级并继续生成。</p>
+            <div class="field">
+              <label for="textEndpoint">主分析接口</label>
+              <input id="textEndpoint" placeholder="OpenAI 兼容 /v1/chat/completions；留空则沿用图像接口域名">
+            </div>
+            <div class="field">
+              <label for="textApiKey">主分析 Key</label>
+              <input id="textApiKey" type="password" autocomplete="off" placeholder="留空则沿用图像接口 Key">
+            </div>
+            <div class="row">
+              <div class="field">
+                <label for="plannerModel">白模总结模型</label>
+                <input id="plannerModel" placeholder="gpt-5.5 或 mimo-v2.5">
+              </div>
+              <div class="field">
+                <label for="referenceModel">灵感反推模型</label>
+                <input id="referenceModel" placeholder="gpt-5.5 或 mimo-v2.5">
+              </div>
+            </div>
+            <div class="field">
+              <label for="backupTextModels">备用模型池</label>
+              <input id="backupTextModels" placeholder="逗号分隔，例如 mimo-v2.5,xiaomi-coding/mimo-v2.5,gpt-5.5">
+            </div>
+          </section>
+
+          <section class="settings-panel wide">
+            <header>
+              <span>备用分析接口</span>
+            </header>
+            <p class="settings-note">当主分析接口或主模型失败时，会按顺序尝试这里的接口，并组合上方“白模总结模型/灵感反推模型/备用模型池”。每行一个接口；Key 可留空表示沿用主分析 Key。</p>
+            <div class="row">
+              <div class="field">
+                <label for="backupTextEndpoints">备用接口地址</label>
+                <textarea class="compact" id="backupTextEndpoints" placeholder="例如：https://token-plan-cn.xiaomimimo.com/v1/chat/completions"></textarea>
+              </div>
+              <div class="field">
+                <label for="backupTextApiKeys">备用接口 Key</label>
+                <textarea class="compact" id="backupTextApiKeys" placeholder="每行对应左侧一个接口；留空则沿用主分析 Key"></textarea>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-panel">
+            <header>
+              <span>运行参数</span>
+              <button id="saveSettingsBtn">保存设置</button>
+            </header>
+            <div class="row">
+              <div class="field">
+                <label for="width">截图宽</label>
+                <input id="width" type="number" min="256" step="64">
+              </div>
+              <div class="field">
+                <label for="height">截图高</label>
+                <input id="height" type="number" min="256" step="64">
+              </div>
+            </div>
+            <div class="field">
+              <label for="outputDir">输出目录</label>
+              <input id="outputDir">
+            </div>
+          </section>
+
+          <section class="settings-panel">
+            <header>
+              <span>GitHub 更新</span>
+              <button id="updatePluginBtn">拉取更新</button>
+            </header>
+            <p class="settings-note">更新会先备份当前插件，再从 GitHub 下载发布包覆盖本机插件目录。Ruby 代码需要重启 SketchUp 才会生效。</p>
+            <div class="row">
+              <div class="field">
+                <label for="githubRepo">GitHub 仓库</label>
+                <input id="githubRepo" placeholder="llghdd-afk/AI-SU">
+              </div>
+              <div class="field">
+                <label for="githubAsset">发布包文件名</label>
+                <input id="githubAsset" placeholder="LocalAIRender.zip">
+              </div>
+            </div>
+            <div class="field">
+              <label for="githubDirectUrl">直接下载地址（可选）</label>
+              <input id="githubDirectUrl" placeholder="留空则使用 releases/latest 中的发布包">
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="help-panel hidden" id="helpPage">
+        <header>
+          <span>帮助中心</span>
+          <button id="backToRenderBtn">返回渲染</button>
+        </header>
+        <div class="help-content">
+          <div>
+            <h2>SU 本地 AI 渲染工作流</h2>
+            <p>这个版本保留一个生图入口，默认使用 fucheers 渠道的 <strong>gpt-image-2</strong>。先获取模型截图或选择相机视角，再输入描述并生成；结果会自动保存到本地历史，重新打开插件也能继续使用。</p>
+          </div>
+          <div class="help-grid">
+            <div class="help-card">
+              <h3>基础生成</h3>
+              <p>点击“获取模型截图”使用当前视角，或点击“获取相机视角”从 SketchUp 场景中选择视图。不写提示词时会自动补写实渲染提示词。</p>
+            </div>
+            <div class="help-card">
+              <h3>结果操作</h3>
+              <p>结果图悬停后可设为参考图、去改图、高清放大、下载、删除。去改图会把结果图变成新的输入图，并聚焦到描述框。</p>
+            </div>
+            <div class="help-card">
+              <h3>历史成果</h3>
+              <p>每次成功生成会保存到输出目录的 history_images 和 history.json。重开插件会恢复最近成果，也可以在历史列表中切换。</p>
+            </div>
+            <div class="help-card">
+              <h3>常见错误</h3>
+              <p>403 通常是模型权限问题；400 多半是参数或提示词问题；500 multipart 解析错误通常说明请求格式不匹配。当前默认已固定为 gpt-image-2 和 Multipart。</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal hidden" id="viewModal">
+    <div class="modal-panel">
+      <div class="modal-header">
+        <div class="modal-title">
+          <strong>选择视图</strong>
+          <span>最多可选择1个视图</span>
+        </div>
+        <button class="icon-btn" id="closeViewModal" title="关闭">×</button>
+      </div>
+      <div class="view-grid" id="viewGrid"></div>
+      <div class="modal-footer">
+        <button id="loadMoreViewsBtn">加载更多视图</button>
+        <button class="primary" id="confirmViewBtn">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="previewModal">
+    <div class="preview-modal-panel">
+      <div class="modal-header">
+        <div class="modal-title">
+          <strong>图片预览</strong>
+          <span>可继续设参考图、改图、放大或下载</span>
+        </div>
+        <button class="icon-btn" id="closePreviewModal" title="关闭">×</button>
+      </div>
+      <div class="preview-stage">
+        <img id="previewImage" alt="">
+      </div>
+      <div class="preview-actions">
+        <button data-preview-action="reference">设为参考图</button>
+        <button data-preview-action="edit">去改图</button>
+        <button data-preview-action="upscale">高清放大</button>
+        <button data-preview-action="download">下载</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="compareModal">
+    <div class="compare-modal-panel">
+      <div class="modal-header">
+        <div class="modal-title">
+          <strong id="compareTitle">灵感对比</strong>
+          <span>左侧是 Pinterest 灵感来源，右侧是基于 SU 白模生成的效果图</span>
+        </div>
+        <button class="icon-btn" id="closeCompareModal" title="关闭">×</button>
+      </div>
+      <div class="compare-stage">
+        <section class="compare-pane">
+          <header> Pinterest 灵感 </header>
+          <div class="compare-image" id="compareInspiration"></div>
+        </section>
+        <section class="compare-pane">
+          <header> SU 效果图 </header>
+          <div class="compare-image" id="compareRender"></div>
+        </section>
+      </div>
+      <div class="preview-actions">
+        <button data-compare-action="toggle-annotations">隐藏标注</button>
+        <button data-compare-action="open-source">打开 Pinterest</button>
+        <button data-compare-action="download-source">下载灵感图</button>
+        <button data-compare-action="download">下载效果图</button>
+        <button class="primary" data-compare-action="edit">送去材质渲染微调</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const PINTEREST_STATUS_CACHE_KEY = 'llghd.local_ai_render.pinterest_status.v1';
+      const PINTEREST_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+      const PINTEREST_AUTO_REFRESH_MS = 6 * 60 * 60 * 1000;
+
+      const state = {
+        inputPath: '',
+        inputUrl: '',
+        outputPath: '',
+        outputUrl: '',
+        outputId: '',
+        history: [],
+        camera: null,
+        views: [],
+        selectedViewIndex: 0,
+        sceneTotal: 0,
+        sceneNextOffset: 0,
+        sceneHasMore: false,
+        inspirationRunning: false,
+        activeInspirationItem: null,
+        pendingInspirationEdit: false,
+        inspirationRefs: [],
+        inspirationResults: [],
+        pinterestLoginUrl: 'http://127.0.0.1:17862/login',
+        pinterestSearchUrl: 'https://www.pinterest.com/search/pins/?q=modern%20interior%20design%20inspiration',
+        pinterestStatus: null,
+        pinterestVerifyTimeout: null,
+        pinterestVerifyInFlight: false,
+        pinterestVerifyRequestId: '',
+        pinterestManualVerify: false,
+        pinterestAutoChecked: false,
+        showInspirationAnnotations: true
+      };
+
+      const el = {
+        renderNavBtn: document.getElementById('renderNavBtn'),
+        inspirationNavBtn: document.getElementById('inspirationNavBtn'),
+        settingsNavBtn: document.getElementById('settingsNavBtn'),
+        helpNavBtn: document.getElementById('helpNavBtn'),
+        renderPage: document.getElementById('renderPage'),
+        inspirationPage: document.getElementById('inspirationPage'),
+        settingsPage: document.getElementById('settingsPage'),
+        helpPage: document.getElementById('helpPage'),
+        backToRenderBtn: document.getElementById('backToRenderBtn'),
+        renderSidebarSections: document.querySelectorAll('.render-sidebar-section'),
+        inspirationSidebar: document.getElementById('inspirationSidebar'),
+        inspirationFlow: document.getElementById('inspirationFlow'),
+        workspaceTitle: document.getElementById('workspaceTitle'),
+        status: document.getElementById('status'),
+        captureBtn: document.getElementById('captureBtn'),
+        cameraBtn: document.getElementById('cameraBtn'),
+        renderBtn: document.getElementById('renderBtn'),
+        fileInput: document.getElementById('fileInput'),
+        prompt: document.getElementById('prompt'),
+        endpoint: document.getElementById('endpoint'),
+        apiKey: document.getElementById('apiKey'),
+        model: document.getElementById('model'),
+        requestMode: document.getElementById('requestMode'),
+        textEndpoint: document.getElementById('textEndpoint'),
+        textApiKey: document.getElementById('textApiKey'),
+        plannerModel: document.getElementById('plannerModel'),
+        referenceModel: document.getElementById('referenceModel'),
+        backupTextModels: document.getElementById('backupTextModels'),
+        backupTextEndpoints: document.getElementById('backupTextEndpoints'),
+        backupTextApiKeys: document.getElementById('backupTextApiKeys'),
+        width: document.getElementById('width'),
+        height: document.getElementById('height'),
+        outputDir: document.getElementById('outputDir'),
+        builtinChannelBtn: document.getElementById('builtinChannelBtn'),
+        saveSettingsBtn: document.getElementById('saveSettingsBtn'),
+        testApiBtn: document.getElementById('testApiBtn'),
+        testTextApiBtn: document.getElementById('testTextApiBtn'),
+        githubRepo: document.getElementById('githubRepo'),
+        githubAsset: document.getElementById('githubAsset'),
+        githubDirectUrl: document.getElementById('githubDirectUrl'),
+        updatePluginBtn: document.getElementById('updatePluginBtn'),
+        inputWrap: document.getElementById('inputWrap'),
+        outputWrap: document.getElementById('outputWrap'),
+        inputPath: document.getElementById('inputPath'),
+        outputPath: document.getElementById('outputPath'),
+        cameraJson: document.getElementById('cameraJson'),
+        copyCameraBtn: document.getElementById('copyCameraBtn'),
+        openInputBtn: document.getElementById('openInputBtn'),
+        previewOutputBtn: document.getElementById('previewOutputBtn'),
+        openOutputBtn: document.getElementById('openOutputBtn'),
+        historyList: document.getElementById('historyList'),
+        refreshHistoryBtn: document.getElementById('refreshHistoryBtn'),
+        viewModal: document.getElementById('viewModal'),
+        viewGrid: document.getElementById('viewGrid'),
+        closeViewModal: document.getElementById('closeViewModal'),
+        loadMoreViewsBtn: document.getElementById('loadMoreViewsBtn'),
+        confirmViewBtn: document.getElementById('confirmViewBtn'),
+        previewModal: document.getElementById('previewModal'),
+        previewImage: document.getElementById('previewImage'),
+        closePreviewModal: document.getElementById('closePreviewModal'),
+        compareModal: document.getElementById('compareModal'),
+        compareTitle: document.getElementById('compareTitle'),
+        compareInspiration: document.getElementById('compareInspiration'),
+        compareRender: document.getElementById('compareRender'),
+        closeCompareModal: document.getElementById('closeCompareModal'),
+        inspirationCaptureBtn: document.getElementById('inspirationCaptureBtn'),
+        inspirationForceCapture: document.getElementById('inspirationForceCapture'),
+        inspirationInputWrap: document.getElementById('inspirationInputWrap'),
+        inspirationInputPath: document.getElementById('inspirationInputPath'),
+        inspirationCount: document.getElementById('inspirationCount'),
+        inspirationPrompt: document.getElementById('inspirationPrompt'),
+        inspirationRefInput: document.getElementById('inspirationRefInput'),
+        inspirationRefStrip: document.getElementById('inspirationRefStrip'),
+        inspirationClearRefsBtn: document.getElementById('inspirationClearRefsBtn'),
+        pinterestVerifyBtn: document.getElementById('pinterestVerifyBtn'),
+        pinterestLoginBtn: document.getElementById('pinterestLoginBtn'),
+        pinterestStatusDot: document.getElementById('pinterestStatusDot'),
+        pinterestStatusTitle: document.getElementById('pinterestStatusTitle'),
+        pinterestStatusText: document.getElementById('pinterestStatusText'),
+        inspirationGenerateBtn: document.getElementById('inspirationGenerateBtn'),
+        inspirationResumeBtn: document.getElementById('inspirationResumeBtn'),
+        inspirationCancelBtn: document.getElementById('inspirationCancelBtn'),
+        inspirationPlan: document.getElementById('inspirationPlan'),
+        inspirationResults: document.getElementById('inspirationResults'),
+        inspirationSummary: document.getElementById('inspirationSummary')
+      };
+
+      function callRuby(name, payload) {
+        if (!window.sketchup) {
+          setStatus('当前不在 SketchUp HtmlDialog 环境中。', true);
+          return;
+        }
+
+        if (!window.sketchup[name]) {
+          setStatus('当前 SketchUp 仍在运行旧版插件，缺少命令：' + name + '。请关闭并重新打开 SketchUp 后再试。', true);
+          return;
+        }
+
+        window.sketchup[name](JSON.stringify(payload || {}));
+      }
+
+      function setStatus(message, isError) {
+        el.status.textContent = message;
+        el.status.style.color = isError ? 'var(--bad)' : 'var(--muted)';
+      }
+
+      function setBusy(isBusy) {
+        el.captureBtn.disabled = isBusy;
+        el.cameraBtn.disabled = isBusy;
+        el.renderBtn.disabled = isBusy;
+        el.inspirationCaptureBtn.disabled = isBusy;
+        el.inspirationGenerateBtn.disabled = isBusy;
+        el.inspirationResumeBtn.disabled = isBusy;
+        el.inspirationClearRefsBtn.disabled = isBusy;
+        el.inspirationRefInput.disabled = isBusy;
+        el.pinterestVerifyBtn.disabled = isBusy;
+        el.inspirationCancelBtn.disabled = !state.inspirationRunning;
+        el.builtinChannelBtn.disabled = isBusy;
+        el.saveSettingsBtn.disabled = isBusy;
+        el.testApiBtn.disabled = isBusy;
+        el.testTextApiBtn.disabled = isBusy;
+        el.updatePluginBtn.disabled = isBusy;
+        el.loadMoreViewsBtn.disabled = isBusy || !state.sceneHasMore;
+      }
+
+      function setInspirationRunning(isRunning) {
+        state.inspirationRunning = isRunning;
+        setBusy(isRunning);
+        el.inspirationGenerateBtn.textContent = isRunning ? '灵感爆发中' : '开始灵感爆发';
+        el.inspirationCancelBtn.classList.toggle('hidden', !isRunning);
+        el.inspirationCancelBtn.disabled = !isRunning;
+      }
+
+      function setFlowStage(stage) {
+        const order = {
+          captured: 'capture',
+          analyzing: 'analyze',
+          pinterest_plan: 'pinterest',
+          pinterest_fetch: 'pinterest',
+          pinterest_images: 'pinterest',
+          reference_analyzing: 'pinterest',
+          rendering: 'render',
+          rendered: 'render',
+          render_failed: 'render'
+        };
+        const active = order[stage] || stage || 'capture';
+        Array.prototype.forEach.call(el.inspirationFlow.querySelectorAll('.flow-step'), function (item) {
+          item.classList.toggle('active', item.getAttribute('data-flow-stage') === active);
+        });
+      }
+
+      function imageHtml(url) {
+        return '<img src="' + escapeAttr(url) + '" alt="">';
+      }
+
+      function resultHtml(url) {
+        return [
+          '<div class="result-card">',
+          '<img src="' + escapeAttr(url) + '" alt="">',
+          '<div class="result-toolbar" aria-label="结果操作">',
+          '<button class="result-tool" data-result-action="preview" title="预览">□</button>',
+          '<button class="result-tool" data-result-action="regenerate" title="重新生成">↻</button>',
+          '<button class="result-tool primary-action" data-result-action="reference" title="设为参考图">↩</button>',
+          '<button class="result-tool" data-result-action="edit" title="去改图">✎</button>',
+          '<button class="result-tool" data-result-action="upscale" title="高清放大">HD</button>',
+          '<button class="result-tool" data-result-action="download" title="下载">↓</button>',
+          '<button class="result-tool" data-result-action="delete" title="删除">×</button>',
+          '</div>',
+          '</div>'
+        ].join('');
+      }
+
+      function escapeAttr(value) {
+        return String(value || '').replace(/[&<>"']/g, function (char) {
+          return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char];
+        });
+      }
+
+      function showInput(result) {
+        state.inputPath = result.path || state.inputPath;
+        state.inputUrl = result.url || state.inputUrl;
+        state.camera = result.camera || state.camera;
+        el.inputWrap.innerHTML = imageHtml(result.url || state.inputUrl);
+        el.inputPath.textContent = result.path || result.url || '-';
+        el.openInputBtn.disabled = !(state.inputPath || state.inputUrl);
+        showInspirationBase();
+        showCamera(state.camera);
+      }
+
+      function showInspirationBase() {
+        const url = state.inputUrl || '';
+        if (url) {
+          el.inspirationInputWrap.innerHTML = imageHtml(url);
+          el.inspirationInputPath.textContent = state.inputPath || url;
+        } else {
+          el.inspirationInputWrap.innerHTML = '<div class="empty">生成前会使用当前 SketchUp 视口截图</div>';
+          el.inspirationInputPath.textContent = '-';
+        }
+      }
+
+      function renderReferenceStrip() {
+        if (!state.inspirationRefs.length) {
+          el.inspirationRefStrip.innerHTML = '<div class="empty">工具会在线获取 Pinterest 灵感图，并与生成效果图配对展示</div>';
+          return;
+        }
+
+        el.inspirationRefStrip.innerHTML = state.inspirationRefs.map(function (ref, index) {
+          return [
+            '<div class="reference-thumb" title="' + escapeAttr(ref.name || ('参考图 ' + (index + 1))) + '">',
+            '<img src="' + escapeAttr(ref.data_url || ref.url || '') + '" alt="">',
+            '<button class="reference-remove" data-ref-index="' + index + '" title="移除">×</button>',
+            '</div>'
+          ].join('');
+        }).join('');
+      }
+
+      function handleInspirationFiles(files) {
+        const list = Array.prototype.slice.call(files || []).slice(0, 12 - state.inspirationRefs.length);
+        if (!list.length) return;
+
+        let pending = list.length;
+        setStatus('正在读取参考图...');
+        list.forEach(function (file) {
+          const reader = new FileReader();
+          reader.onload = function () {
+            state.inspirationRefs.push({
+              name: file.name,
+              data_url: reader.result
+            });
+            pending -= 1;
+            if (pending === 0) {
+              renderReferenceStrip();
+              el.inspirationRefInput.value = '';
+              setStatus('已加入 ' + state.inspirationRefs.length + ' 张灵感参考图。');
+            }
+          };
+          reader.onerror = function () {
+            pending -= 1;
+            if (pending === 0) {
+              renderReferenceStrip();
+              el.inspirationRefInput.value = '';
+              setStatus('参考图读取完成，部分文件可能失败。', true);
+            }
+          };
+          reader.readAsDataURL(file);
+        });
+      }
+
+      function showOutput(result) {
+        const url = result.image_url || result.url;
+        const record = result.history_record || result.record || {};
+        state.outputPath = result.image_path || '';
+        state.outputUrl = url || '';
+        state.outputId = record.id || result.id || '';
+        if (url) {
+          el.outputWrap.innerHTML = resultHtml(url);
+          el.outputPath.textContent = state.outputPath || url;
+          el.openOutputBtn.disabled = !(state.outputPath || state.outputUrl);
+          el.previewOutputBtn.disabled = !(state.outputPath || state.outputUrl);
+          if (record.id) upsertHistory(record);
+        } else {
+          el.outputWrap.innerHTML = '<div class="empty">' + escapeAttr(result.message || '请求完成，但没有返回图片。') + '</div>';
+          el.outputPath.textContent = '-';
+          el.openOutputBtn.disabled = true;
+          el.previewOutputBtn.disabled = true;
+        }
+      }
+
+      function clearOutput(message) {
+        state.outputPath = '';
+        state.outputUrl = '';
+        state.outputId = '';
+        el.outputWrap.innerHTML = '<div class="empty">' + escapeAttr(message || '生成后会显示在这里') + '</div>';
+        el.outputPath.textContent = '-';
+        el.openOutputBtn.disabled = true;
+        el.previewOutputBtn.disabled = true;
+      }
+
+      function showHistory(records) {
+        const list = records || [];
+        state.history = list;
+        renderHistoryList(list);
+        if (!list.length) {
+          if (!hasResultImage()) clearOutput('生成后会显示在这里');
+          return;
+        }
+
+        const latest = list[0];
+        showOutput({
+          id: latest.id,
+          image_path: latest.path,
+          image_url: latest.url,
+          history_record: latest
+        });
+        setStatus('已恢复上一次生成结果。');
+      }
+
+      function upsertHistory(record) {
+        if (!record || !record.id) return;
+        state.history = [record].concat(state.history.filter(function (item) {
+          return item.id !== record.id;
+        })).slice(0, 50);
+        renderHistoryList(state.history);
+      }
+
+      function renderHistoryList(records) {
+        const list = records || [];
+        if (!list.length) {
+          el.historyList.innerHTML = '<div class="empty">生成后会自动保存历史</div>';
+          return;
+        }
+
+        el.historyList.innerHTML = list.map(function (record) {
+          const active = record.id && record.id === state.outputId ? ' active' : '';
+          const title = record.action === 'upscale'
+            ? '高清放大'
+            : (record.action === 'inspiration_burst' ? '灵感爆发' : '生成结果');
+          return [
+            '<div class="history-item' + active + '" data-history-id="' + escapeAttr(record.id || '') + '">',
+            '<img src="' + escapeAttr(record.url || '') + '" alt="">',
+            '<div class="history-meta">',
+            '<strong>' + escapeAttr(title) + '</strong>',
+            '<span>' + escapeAttr(record.created_at || '') + '</span>',
+            '</div>',
+            '</div>'
+          ].join('');
+        }).join('');
+      }
+
+      function selectHistoryRecord(id) {
+        const record = state.history.find(function (item) { return item.id === id; });
+        if (!record) return;
+        showOutput({
+          id: record.id,
+          image_path: record.path,
+          image_url: record.url,
+          history_record: record
+        });
+        setStatus('已切换历史成果。');
+      }
+
+      function showInspirationProgress(payload) {
+        if (payload.base_image) showInput(payload.base_image);
+        if (payload.stage) setFlowStage(payload.stage);
+        if (payload.plan) showInspirationPlan(payload.plan);
+        if (payload.stage === 'rendering' && payload.index && !payload.result) {
+          upsertInspirationResult({
+            index: payload.index,
+            pending: true,
+            status: 'rendering',
+            prompt: payload.prompt || '',
+            inspiration_source: payload.source || {}
+          });
+        }
+        if (payload.result) {
+          upsertInspirationResult(payload.result);
+        }
+        if (payload.index && payload.target_count) {
+          const renderStages = ['rendering', 'rendered', 'render_failed'];
+          const summaryPrefix = renderStages.indexOf(payload.stage || '') >= 0 ? '生成中 ' : '处理中 ';
+          el.inspirationSummary.textContent = summaryPrefix + payload.index + '/' + payload.target_count;
+        }
+        if (payload.message) {
+          if (!payload.result && !state.inspirationResults.length) {
+            el.inspirationResults.innerHTML = '<div class="empty">' + escapeAttr(payload.message) + '</div>';
+          }
+          setStatus(payload.message);
+        }
+      }
+
+      function upsertInspirationResult(result) {
+        const existing = state.inspirationResults.filter(function (item) {
+          return Number(item.index) !== Number(result.index);
+        });
+        existing.push(result);
+        existing.sort(function (a, b) { return Number(a.index || 0) - Number(b.index || 0); });
+        state.inspirationResults = existing;
+        renderInspirationResultGrid(existing);
+      }
+
+      function pendingInspirationResults(count) {
+        const total = Math.max(2, Math.min(12, Number(count || 4)));
+        return Array.from({ length: total }, function (_item, index) {
+          return {
+            index: index + 1,
+            pending: true,
+            status: 'pending',
+            inspiration_source: {
+              title: '版本 ' + (index + 1),
+              summary: '等待生成'
+            }
+          };
+        });
+      }
+
+      function showInspirationPlan(plan) {
+        plan = plan || {};
+        const queries = plan.pinterest_queries || [];
+        const summary = plan.model_summary || '';
+        el.inspirationPlan.classList.remove('hidden');
+        el.inspirationPlan.innerHTML = [
+          '<div class="plan-summary"><strong>白模总结：</strong>' + escapeAttr(summary || '等待多模态模型分析结果') + '</div>',
+          '<div class="query-grid">',
+          queries.map(function (item) {
+            return [
+              '<div class="query-card">',
+              '<strong>搜索 ' + escapeAttr(item.index || '') + '</strong>',
+              '<span>' + escapeAttr(item.query || '') + '</span>',
+              '<span>' + escapeAttr(item.intent || '') + '</span>',
+              '<button data-open-pinterest="' + escapeAttr(item.search_url || '') + '">打开 Pinterest</button>',
+              '</div>'
+            ].join('');
+          }).join(''),
+          '</div>'
+        ].join('');
+      }
+
+      function showInspirationResults(payload) {
+        const results = payload.results || [];
+        state.inspirationResults = results;
+        if (payload.base_image) {
+          showInput(payload.base_image);
+        }
+        if (payload.plan) showInspirationPlan(payload.plan);
+        renderInspirationResultGrid(results);
+        if (payload.history) {
+          showHistory(payload.history);
+        }
+
+        const success = payload.generated_count || results.filter(function (item) { return item.ok; }).length;
+        const target = payload.target_count || results.length;
+        const failed = Math.max(target - success, 0);
+        el.inspirationSummary.textContent = '完成 ' + success + '/' + target + (failed ? '，失败 ' + failed : '');
+        const firstOk = results.find(function (item) { return item.ok && (item.image_url || item.url); });
+        if (firstOk) showOutput(firstOk);
+        setStatus('灵感爆发完成：已生成 ' + success + '/' + target + ' 个版本。' + (failed ? ' 有失败项可在结果区查看。' : ''));
+      }
+
+      function renderInspirationResultGrid(results) {
+        if (!results.length) {
+          el.inspirationResults.innerHTML = '<div class="empty">会按选择数量生成 2-12 个版本，并自动保存到历史</div>';
+          return;
+        }
+
+        el.inspirationResults.innerHTML = results.map(function (item) {
+          const url = item.image_url || item.url || '';
+          const prompt = item.prompt || '';
+          const source = item.inspiration_source || {};
+          if (item.pending || item.status === 'pending' || item.status === 'resume_pending' || item.status === 'rendering' || item.status === 'network_retrying') {
+            const label = item.status === 'network_retrying' ? '补跑中' : (item.status === 'rendering' ? '生成中' : '等待中');
+            const pendingText = item.status === 'network_retrying'
+              ? '网络失败后正在自动补跑这一版...'
+              : (item.status === 'rendering' ? '正在基于 SU 白模和 Pinterest 灵感生成效果图...' : '等待前序版本完成后生成');
+            return [
+              '<div class="inspiration-card pending">',
+              '<header><span>版本 ' + escapeAttr(item.index || '') + '</span><span>' + label + '</span></header>',
+              '<div class="pending-slot">',
+              '<span>' + escapeAttr(pendingText) + '</span>',
+              '</div>',
+              '<div class="inspiration-meta">',
+              '<strong>' + escapeAttr(source.title || ('版本 ' + (item.index || ''))) + '</strong>',
+              '<span>' + escapeAttr(source.summary || source.intent || prompt.slice(0, 120) || '已加入本轮任务队列') + '</span>',
+              '</div>',
+              '</div>'
+            ].join('');
+          }
+
+          if (!item.ok) {
+            const failedTitle = item.retryable || item.status === 'network_failed' ? '网络失败，可重试' : '失败';
+            return [
+              '<div class="inspiration-card failed">',
+              '<header><span>版本 ' + escapeAttr(item.index || '') + '</span><span>' + failedTitle + '</span></header>',
+              '<div class="inspiration-meta">',
+              '<strong>' + escapeAttr(source.title || ('版本 ' + (item.index || ''))) + '</strong>',
+              '<span>' + escapeAttr(item.error || '生成失败') + '</span>',
+              '</div>',
+              '</div>'
+            ].join('');
+          }
+
+          return [
+            '<div class="inspiration-card" data-inspiration-index="' + escapeAttr(item.index || '') + '">',
+            '<header>',
+            '<span>版本 ' + escapeAttr(item.index || '') + '</span>',
+            '<span>' + escapeAttr((source.type === 'pinterest_online' || source.type === 'pinterest_remote') ? '在线灵感图' : '在线获取状态') + '</span>',
+            '</header>',
+            '<div class="comparison-pair">',
+            '<div class="pair-pane">',
+            '<div class="label"><span>Pinterest 灵感</span><span>' + escapeAttr(source.reference_name || '') + '</span></div>',
+            '<div class="image-slot">' + inspirationSourceHtml(source, { compact: true, fallbackPrompt: prompt }) + '</div>',
+            '</div>',
+            '<div class="pair-pane">',
+            '<div class="label"><span>生成效果图</span><span>SU 白模</span></div>',
+            '<div class="image-slot"><img src="' + escapeAttr(url) + '" alt=""></div>',
+            '</div>',
+            '</div>',
+            '<div class="inspiration-meta">',
+            '<strong>' + escapeAttr(source.title || ('版本 ' + (item.index || ''))) + '</strong>',
+            '<span>' + escapeAttr(source.summary || source.intent || prompt.slice(0, 120)) + '</span>',
+            '</div>',
+            '<div class="inspiration-actions">',
+            '<button data-inspiration-action="compare">放大对比</button>',
+            '<button data-inspiration-action="open-source">打开 Pinterest</button>',
+            '<button data-inspiration-action="download-source">下载灵感图</button>',
+            '<button data-inspiration-action="download">下载效果图</button>',
+            '<button class="primary" data-inspiration-action="edit">送去材质渲染微调</button>',
+            '</div>',
+            '</div>'
+          ].join('');
+        }).join('');
+      }
+
+      function sourceKeyPoints(source) {
+        source = source || {};
+        return Array.isArray(source.key_points) ? source.key_points.filter(function (point) {
+          return point && (point.label || point.detail);
+        }).slice(0, 4) : [];
+      }
+
+      function sourcePromptText(source, fallback) {
+        source = source || {};
+        return source.extracted_prompt || source.render_prompt || source.summary || source.intent || source.query || fallback || '';
+      }
+
+      function annotationLayerHtml(source, compact) {
+        const points = sourceKeyPoints(source);
+        if (!points.length) return '';
+        return [
+          '<div class="annotation-layer">',
+          points.map(function (point) {
+            let x = Number(point.x || 50);
+            let y = Number(point.y || 50);
+            if (!Number.isFinite(x)) x = 50;
+            if (!Number.isFinite(y)) y = 50;
+            x = Math.max(5, Math.min(95, x));
+            y = Math.max(5, Math.min(95, y));
+            return [
+              '<div class="annotation-pin" style="left:' + x + '%;top:' + y + '%">',
+              '<span class="annotation-dot"></span>',
+              '<span class="annotation-label">' + escapeAttr(point.label || '关键点') + '</span>',
+              '</div>'
+            ].join('');
+          }).join(''),
+          '</div>'
+        ].join('');
+      }
+
+      function sourcePromptBlockHtml(source, fallback, compact) {
+        const prompt = sourcePromptText(source, fallback);
+        const points = sourceKeyPoints(source);
+        const list = compact ? '' : [
+          '<ul class="key-point-list">',
+          points.map(function (point) {
+            return [
+              '<li>',
+              '<b>' + escapeAttr(point.label || '关键点') + '</b>',
+              '<span>' + escapeAttr(point.detail || '') + '</span>',
+              '</li>'
+            ].join('');
+          }).join(''),
+          '</ul>'
+        ].join('');
+        return [
+          '<div class="source-prompt">',
+          '<strong>反推提示词</strong>',
+          '<span>' + escapeAttr(prompt || '等待多模态模型提取提示词') + '</span>',
+          list,
+          '</div>'
+        ].join('');
+      }
+
+      function inspirationSourceHtml(source, options) {
+        source = source || {};
+        options = options || {};
+        const compact = Boolean(options.compact);
+        const hiddenClass = state.showInspirationAnnotations ? '' : ' annotations-hidden';
+        if (source.image_url) {
+          return [
+            '<div class="annotated-source' + hiddenClass + '">',
+            '<div class="annotation-frame' + (compact ? ' compact' : '') + '">',
+            '<img src="' + escapeAttr(source.image_url) + '" alt="">',
+            annotationLayerHtml(source, compact),
+            '</div>',
+            sourcePromptBlockHtml(source, options.fallbackPrompt || '', compact),
+            '</div>'
+          ].join('');
+        }
+
+        return [
+          '<div class="annotated-source">',
+          '<div class="source-placeholder">',
+          '<strong>' + escapeAttr(source.fetch_error ? '未取得 Pinterest 网站灵感图' : 'Pinterest 搜索词') + '</strong>',
+          '<span>' + escapeAttr(source.query || '等待多模态模型生成搜索词') + '</span>',
+          source.fetch_error ? '<span>' + escapeAttr(source.fetch_error) + '</span>' : '',
+          '<span>' + escapeAttr(source.intent || '') + '</span>',
+          '</div>',
+          sourcePromptBlockHtml(source, options.fallbackPrompt || '', compact),
+          '</div>'
+        ].join('');
+      }
+
+      function selectInspirationResult(index) {
+        const item = state.inspirationResults.find(function (result) {
+          return Number(result.index) === Number(index);
+        });
+        if (!item || !item.ok) return;
+        showOutput(item);
+        setStatus('已设为当前效果图：灵感版本 ' + index + '。');
+      }
+
+      function findInspirationResult(index) {
+        return state.inspirationResults.find(function (result) {
+          return Number(result.index) === Number(index);
+        });
+      }
+
+      function inspirationResultPayload(item) {
+        const record = item.history_record || {};
+        const source = item.inspiration_source || {};
+        return Object.assign(renderPayload(), {
+          id: record.id || '',
+          path: item.image_path || '',
+          url: item.image_url || item.url || '',
+          prompt: item.prompt || '',
+          inspiration_source: source
+        });
+      }
+
+      function openInspirationCompare(item) {
+        if (!item || !item.ok) return;
+        const source = item.inspiration_source || {};
+        const renderUrl = item.image_url || item.url || '';
+        state.activeInspirationItem = item;
+        el.compareTitle.textContent = source.title || ('灵感版本 ' + (item.index || ''));
+        el.compareInspiration.innerHTML = inspirationSourceHtml(source, { compact: false, fallbackPrompt: item.prompt || '' });
+        el.compareRender.innerHTML = renderUrl
+          ? '<img src="' + escapeAttr(renderUrl) + '" alt="">'
+          : '<div>没有可预览的效果图</div>';
+        const toggleButton = el.compareModal.querySelector('[data-compare-action="toggle-annotations"]');
+        if (toggleButton) {
+          toggleButton.textContent = state.showInspirationAnnotations ? '隐藏标注' : '显示标注';
+          toggleButton.disabled = !(source.image_url && sourceKeyPoints(source).length);
+        }
+        el.compareModal.classList.remove('hidden');
+      }
+
+      function closeInspirationCompare() {
+        el.compareModal.classList.add('hidden');
+        el.compareInspiration.innerHTML = '';
+        el.compareRender.innerHTML = '';
+      }
+
+      function handleInspirationAction(item, action) {
+        if (!item || !item.ok) return;
+        const source = item.inspiration_source || {};
+        if (action === 'compare') {
+          openInspirationCompare(item);
+        } else if (action === 'open-source') {
+          if (source.search_url) callRuby('open_path', { url: source.search_url });
+          else if (source.image_path || source.image_url) callRuby('open_path', { path: source.image_path, url: source.image_url });
+        } else if (action === 'download-source') {
+          if (source.image_path || source.image_url) {
+            setBusy(true);
+            setStatus('正在下载 Pinterest 灵感图...');
+            callRuby('download_result', { path: source.image_path, url: source.image_url });
+          } else if (source.search_url) {
+            callRuby('open_path', { url: source.search_url });
+          }
+        } else if (action === 'download') {
+          setBusy(true);
+          setStatus('正在下载灵感版本效果图...');
+          callRuby('download_result', inspirationResultPayload(item));
+        } else if (action === 'edit') {
+          state.pendingInspirationEdit = true;
+          el.prompt.value = item.prompt || '';
+          setBusy(true);
+          setStatus('正在送去材质渲染微调...');
+          callRuby('edit_result', inspirationResultPayload(item));
+        }
+      }
+
+      function setActivePage(page) {
+        const help = page === 'help';
+        const inspiration = page === 'inspiration';
+        const settings = page === 'settings';
+        el.helpPage.classList.toggle('hidden', !help);
+        el.inspirationPage.classList.toggle('hidden', !inspiration);
+        el.settingsPage.classList.toggle('hidden', !settings);
+        el.renderPage.classList.toggle('hidden', help || inspiration || settings);
+        el.helpNavBtn.classList.toggle('active', help);
+        el.inspirationNavBtn.classList.toggle('active', inspiration);
+        el.settingsNavBtn.classList.toggle('active', settings);
+        el.renderNavBtn.classList.toggle('active', !help && !inspiration && !settings);
+        document.body.classList.toggle('mode-inspiration', inspiration);
+        document.body.classList.toggle('mode-settings', settings);
+        el.workspaceTitle.textContent = inspiration
+          ? '灵感爆发工作区'
+          : (settings ? '设置中心' : (help ? '帮助中心' : '材质渲染工作区'));
+        Array.prototype.forEach.call(el.renderSidebarSections, function (section) {
+          section.classList.toggle('hidden', inspiration || help || settings);
+        });
+        el.inspirationSidebar.classList.toggle('hidden', !inspiration);
+        if (inspiration) {
+          showInspirationBase();
+          maybeAutoVerifyPinterest(false);
+        }
+      }
+
+      function openPreview() {
+        if (!hasResultImage()) return;
+        el.previewImage.src = state.outputUrl || '';
+        el.previewModal.classList.remove('hidden');
+      }
+
+      function closePreview() {
+        el.previewModal.classList.add('hidden');
+        el.previewImage.removeAttribute('src');
+      }
+
+      function currentResultPayload(extra) {
+        const payload = renderPayload();
+        payload.id = state.outputId;
+        payload.path = state.outputPath;
+        payload.url = state.outputUrl;
+        return Object.assign(payload, extra || {});
+      }
+
+      function hasResultImage() {
+        return Boolean(state.outputPath || state.outputUrl);
+      }
+
+      function handleResultAction(action) {
+        if (!hasResultImage()) {
+          setStatus('当前没有可操作的生成结果。', true);
+          return;
+        }
+
+        if (action === 'preview') {
+          openPreview();
+        } else if (action === 'regenerate') {
+          setBusy(true);
+          setStatus('正在重新生成...');
+          callRuby('render', renderPayload());
+        } else if (action === 'reference') {
+          setBusy(true);
+          setStatus('正在设为参考图...');
+          callRuby('set_reference_image', currentResultPayload());
+        } else if (action === 'edit') {
+          setBusy(true);
+          setStatus('正在准备改图...');
+          callRuby('edit_result', currentResultPayload());
+        } else if (action === 'upscale') {
+          setBusy(true);
+          setStatus('正在高清放大...');
+          callRuby('upscale_result', currentResultPayload({ prompt: '' }));
+        } else if (action === 'download') {
+          setBusy(true);
+          setStatus('正在下载结果图...');
+          callRuby('download_result', currentResultPayload());
+        } else if (action === 'delete') {
+          setBusy(true);
+          setStatus('正在删除结果记录...');
+          callRuby('delete_history_item', currentResultPayload());
+        }
+      }
+
+      function showCamera(camera) {
+        el.cameraJson.textContent = JSON.stringify(camera || {}, null, 2);
+      }
+
+      function showViewBatch(result) {
+        const batch = result.views || [];
+        const isFirstBatch = !result.offset;
+        if (isFirstBatch) {
+          state.views = [];
+          state.selectedViewIndex = 0;
+          el.viewGrid.innerHTML = '';
+        }
+
+        state.sceneTotal = result.total || batch.length;
+        state.sceneNextOffset = result.next_offset || state.views.length + batch.length;
+        state.sceneHasMore = Boolean(result.has_more);
+        state.views = state.views.concat(batch);
+
+        if (!state.views.length) {
+          setStatus('没有找到可用场景。', true);
+          el.loadMoreViewsBtn.disabled = true;
+          return;
+        }
+
+        el.viewGrid.innerHTML = state.views.map(function (view, index) {
+          return [
+            '<div class="view-card' + (index === 0 ? ' selected' : '') + '" data-index="' + index + '">',
+            '<img src="' + escapeAttr(view.url) + '" alt="">',
+            '<div class="check">✓</div>',
+            '<div class="name">' + escapeAttr(view.name || ('场景' + (index + 1))) + '</div>',
+            '</div>'
+          ].join('');
+        }).join('');
+
+        Array.prototype.forEach.call(el.viewGrid.querySelectorAll('.view-card'), function (card) {
+          card.addEventListener('click', function () {
+            selectView(Number(card.getAttribute('data-index')));
+          });
+        });
+
+        selectView(Math.min(state.selectedViewIndex, state.views.length - 1));
+        el.loadMoreViewsBtn.disabled = !state.sceneHasMore;
+        el.loadMoreViewsBtn.textContent = state.sceneHasMore
+          ? '加载更多视图（' + state.views.length + '/' + state.sceneTotal + '）'
+          : '已加载全部视图（' + state.views.length + '/' + state.sceneTotal + '）';
+        el.viewModal.classList.remove('hidden');
+      }
+
+      function selectView(index) {
+        state.selectedViewIndex = index;
+        Array.prototype.forEach.call(el.viewGrid.querySelectorAll('.view-card'), function (card) {
+          card.classList.toggle('selected', Number(card.getAttribute('data-index')) === index);
+        });
+      }
+
+      function hideViewModal() {
+        el.viewModal.classList.add('hidden');
+      }
+
+      function settingsPayload() {
+        return {
+          endpoint: el.endpoint.value,
+          api_key: el.apiKey.value,
+          model: el.model.value,
+          request_mode: el.requestMode.value,
+          text_endpoint: el.textEndpoint.value,
+          text_api_key: el.textApiKey.value,
+          planner_model: el.plannerModel.value,
+          reference_model: el.referenceModel.value,
+          backup_text_models: el.backupTextModels.value,
+          backup_text_endpoints: el.backupTextEndpoints.value,
+          backup_text_api_keys: el.backupTextApiKeys.value,
+          github_repo: el.githubRepo.value,
+          github_asset: el.githubAsset.value,
+          github_direct_url: el.githubDirectUrl.value,
+          output_dir: el.outputDir.value,
+          capture_width: el.width.value,
+          capture_height: el.height.value
+        };
+      }
+
+      function renderPayload() {
+        return {
+          prompt: el.prompt.value,
+          image_path: state.inputPath,
+          size: el.width.value + 'x' + el.height.value,
+          endpoint: el.endpoint.value,
+          api_key: el.apiKey.value,
+          model: el.model.value,
+          request_mode: el.requestMode.value,
+          text_endpoint: el.textEndpoint.value,
+          text_api_key: el.textApiKey.value,
+          planner_model: el.plannerModel.value,
+          reference_model: el.referenceModel.value,
+          backup_text_models: el.backupTextModels.value,
+          backup_text_endpoints: el.backupTextEndpoints.value,
+          backup_text_api_keys: el.backupTextApiKeys.value,
+          github_repo: el.githubRepo.value,
+          github_asset: el.githubAsset.value,
+          github_direct_url: el.githubDirectUrl.value,
+          output_dir: el.outputDir.value,
+          capture_width: el.width.value,
+          capture_height: el.height.value
+        };
+      }
+
+      function inspirationPayload() {
+        const payload = renderPayload();
+        let count = Number(el.inspirationCount.value || 4);
+        if (!Number.isFinite(count)) count = 4;
+        count = Math.max(2, Math.min(12, Math.round(count)));
+        el.inspirationCount.value = count;
+        payload.prompt = el.inspirationPrompt.value || '';
+        payload.target_count = count;
+        payload.force_capture = Boolean(el.inspirationForceCapture.checked);
+        payload.references = state.inspirationRefs;
+        return payload;
+      }
+
+      function pinterestVerifyPayload(requestId) {
+        const query = (el.inspirationPrompt.value || '').trim();
+        return {
+          query: query || 'modern interior design inspiration',
+          target_count: Number(el.inspirationCount.value || 4),
+          verify_request_id: requestId || state.pinterestVerifyRequestId || ''
+        };
+      }
+
+      function nextPinterestVerifyRequestId() {
+        return String(Date.now()) + '-' + Math.random().toString(36).slice(2);
+      }
+
+      function isCurrentPinterestVerify(requestId) {
+        return !requestId || state.pinterestVerifyRequestId === requestId;
+      }
+
+      function requestJson(url, timeoutMs) {
+        return new Promise(function (resolve, reject) {
+          const xhr = new XMLHttpRequest();
+          xhr.open('GET', url, true);
+          xhr.timeout = timeoutMs || 30000;
+          xhr.onload = function () {
+            if (xhr.status < 200 || xhr.status >= 300) {
+              reject(new Error('HTTP ' + xhr.status));
+              return;
+            }
+            try {
+              resolve(JSON.parse(xhr.responseText || '{}'));
+            } catch (error) {
+              reject(error);
+            }
+          };
+          xhr.onerror = function () {
+            reject(new Error('network error'));
+          };
+          xhr.ontimeout = function () {
+            reject(new Error('timeout'));
+          };
+          xhr.send();
+        });
+      }
+
+      function readPinterestStatusCache() {
+        try {
+          return JSON.parse(localStorage.getItem(PINTEREST_STATUS_CACHE_KEY) || 'null');
+        } catch (_error) {
+          return null;
+        }
+      }
+
+      function writePinterestStatusCache(payload) {
+        try {
+          if (!payload || !payload.available) {
+            if (payload && (payload.status === 'needs_pinterest_login' || payload.status === 'needs_login_or_worker')) {
+              localStorage.removeItem(PINTEREST_STATUS_CACHE_KEY);
+            }
+            return;
+          }
+          localStorage.setItem(PINTEREST_STATUS_CACHE_KEY, JSON.stringify(Object.assign({}, payload, {
+            verified_at: Date.now()
+          })));
+        } catch (_error) {
+          // Cache is only a convenience; live verification still works without it.
+        }
+      }
+
+      function pinterestCacheAge(payload) {
+        const verifiedAt = Number(payload && payload.verified_at || 0);
+        return verifiedAt > 0 ? (Date.now() - verifiedAt) : Infinity;
+      }
+
+      function restorePinterestStatusFromCache() {
+        const cached = readPinterestStatusCache();
+        if (!cached || !cached.available || pinterestCacheAge(cached) > PINTEREST_CACHE_TTL_MS) return false;
+        const minutes = Math.max(1, Math.round(pinterestCacheAge(cached) / 60000));
+        setPinterestVerification(Object.assign({}, cached, {
+          cached: true,
+          message: '已记住上次 Pinterest 验证结果，约 ' + minutes + ' 分钟前可在线获取灵感图。'
+        }));
+        return true;
+      }
+
+      function finishPinterestVerify(payload, wasManualVerify) {
+        payload = payload || {};
+        if (!isCurrentPinterestVerify(payload.verify_request_id)) return;
+
+        if (state.pinterestVerifyTimeout) {
+          clearTimeout(state.pinterestVerifyTimeout);
+          state.pinterestVerifyTimeout = null;
+        }
+
+        const manual = typeof wasManualVerify === 'boolean' ? wasManualVerify : state.pinterestManualVerify;
+        state.pinterestVerifyInFlight = false;
+        state.pinterestManualVerify = false;
+        state.pinterestVerifyRequestId = '';
+        if (manual) setBusy(false);
+
+        setPinterestVerification(payload);
+        writePinterestStatusCache(payload);
+        if (payload.available) {
+          setStatus(manual ? 'Pinterest 验证通过：工具可在线获取灵感图。' : 'Pinterest 已自动确认可在线获取灵感图。');
+        } else {
+          const needsLogin = payload.status === 'needs_pinterest_login' || payload.status === 'needs_login_or_worker';
+          setStatus(payload.message || payload.error || 'Pinterest 验证未通过。', !needsLogin);
+        }
+      }
+
+      function runPinterestWorkerFallback(requestId, wasManualVerify, verifyPayload) {
+        if (!isCurrentPinterestVerify(requestId)) return;
+        setPinterestVerification({
+          ok: true,
+          available: false,
+          status: 'checking',
+          verify_request_id: requestId,
+          message: '后端验证响应较慢，正在直接询问本地 Pinterest worker...'
+        });
+
+        const query = (verifyPayload && verifyPayload.query) || 'modern interior design inspiration';
+        const count = Math.max(1, Math.min(12, Number(verifyPayload && verifyPayload.target_count || 4)));
+        const url = 'http://127.0.0.1:17862/search?q=' + encodeURIComponent(query) + '&count=' + encodeURIComponent(String(count)) + '&_=' + Date.now();
+        requestJson(url, 35000).then(function (result) {
+          if (!isCurrentPinterestVerify(requestId)) return;
+          const urls = Array.isArray(result.urls) ? result.urls : [];
+          const imageCount = Number(result.image_count || urls.length || 0);
+          if (imageCount > 0) {
+            finishPinterestVerify({
+              ok: true,
+              available: true,
+              status: 'ready',
+              query: result.query || query,
+              search_url: result.search_url || state.pinterestSearchUrl,
+              login_url: state.pinterestLoginUrl,
+              image_count: imageCount,
+              sample_url: urls[0] || '',
+              verify_request_id: requestId,
+              source: 'ui_worker_fallback',
+              message: '已通过本地 worker 直接验证：可以在线获取 Pinterest 灵感图。'
+            }, wasManualVerify);
+            return;
+          }
+
+          finishPinterestVerify({
+            ok: true,
+            available: false,
+            status: 'pinterest_unavailable',
+            query: result.query || query,
+            search_url: result.search_url || state.pinterestSearchUrl,
+            login_url: state.pinterestLoginUrl,
+            image_count: imageCount,
+            verify_request_id: requestId,
+            source: 'ui_worker_fallback',
+            message: '本地 worker 已响应，但没有解析到 Pinterest 网站图片。'
+          }, wasManualVerify);
+        }).catch(function (error) {
+          if (!isCurrentPinterestVerify(requestId)) return;
+          finishPinterestVerify({
+            ok: false,
+            available: false,
+            status: 'error',
+            verify_request_id: requestId,
+            source: 'ui_worker_fallback',
+            error: error.message || String(error),
+            message: 'Pinterest 验证超时，且本地 worker 兜底检查未返回可用结果。'
+          }, wasManualVerify);
+        });
+      }
+
+      function runPinterestVerify(options) {
+        options = options || {};
+        if (state.pinterestVerifyInFlight || state.inspirationRunning) return;
+
+        const requestId = nextPinterestVerifyRequestId();
+        const payload = pinterestVerifyPayload(requestId);
+        state.pinterestVerifyInFlight = true;
+        state.pinterestVerifyRequestId = requestId;
+        state.pinterestManualVerify = Boolean(options.manual);
+        if (state.pinterestManualVerify) setBusy(true);
+
+        setPinterestVerification({
+          ok: true,
+          available: false,
+          status: 'checking',
+          verify_request_id: requestId,
+          message: state.pinterestManualVerify ? '正在验证 Pinterest 在线获取...' : '正在后台检查 Pinterest 在线获取状态...'
+        });
+
+        if (state.pinterestVerifyTimeout) clearTimeout(state.pinterestVerifyTimeout);
+        state.pinterestVerifyTimeout = setTimeout(function () {
+          const wasManual = state.pinterestManualVerify;
+          state.pinterestVerifyTimeout = null;
+          runPinterestWorkerFallback(requestId, wasManual, payload);
+        }, 20000);
+
+        callRuby('verify_pinterest', payload);
+      }
+
+      function maybeAutoVerifyPinterest(force) {
+        if (state.pinterestVerifyInFlight || state.inspirationRunning) return;
+        if (!force && state.pinterestAutoChecked) return;
+
+        const cached = readPinterestStatusCache();
+        if (!force && cached && cached.available && pinterestCacheAge(cached) < PINTEREST_AUTO_REFRESH_MS) return;
+
+        state.pinterestAutoChecked = true;
+        runPinterestVerify({ manual: false });
+      }
+
+      function setPinterestVerification(payload) {
+        payload = payload || {};
+        state.pinterestStatus = payload;
+        if (payload.login_url) state.pinterestLoginUrl = payload.login_url;
+        if (payload.search_url) state.pinterestSearchUrl = payload.search_url;
+
+        const status = payload.status || (payload.available ? 'ready' : 'error');
+        const dotClass = status === 'ready'
+          ? 'ready'
+          : ((status === 'checking' || status === 'busy' || status === 'needs_pinterest_login' || status === 'needs_login_or_worker') ? 'checking' : ((status === 'error' || status === 'pinterest_unavailable') ? 'error' : 'blocked'));
+        const titles = {
+          checking: '正在验证 Pinterest',
+          busy: 'Pinterest 验证中',
+          ready: 'Pinterest 可在线获取',
+          needs_pinterest_login: '需要登录 Pinterest',
+          needs_login_or_worker: '需要登录态/浏览器 worker',
+          download_blocked: 'Pinterest 图片下载受限',
+          pinterest_unavailable: 'Pinterest 暂未取到图片',
+          error: 'Pinterest 验证失败'
+        };
+        const detail = [
+          payload.message || '请重新验证 Pinterest 在线获取状态。',
+          payload.error ? ('详情：' + payload.error) : ''
+        ].filter(Boolean).join(' ');
+        const count = Number(payload.image_count || 0);
+        const suffix = count > 0 ? (' 已解析到 ' + count + ' 个候选图片。') : '';
+
+        el.pinterestStatusDot.className = 'pinterest-dot ' + dotClass;
+        el.pinterestStatusTitle.textContent = titles[status] || 'Pinterest 状态未知';
+        el.pinterestStatusText.textContent = detail + suffix;
+      }
+
+      window.LocalAIRender = {
+        receive: function (action, payload) {
+          payload = payload || {};
+          if (action === 'inspiration_started') {
+            setInspirationRunning(true);
+            if (payload.base_image) showInput(payload.base_image);
+            setFlowStage('captured');
+            setStatus('灵感爆发已转入后台任务。');
+            return;
+          }
+
+          if (action === 'inspiration_progress') {
+            if (!payload.ok && payload.error) {
+              setStatus(payload.error_class ? (payload.error_class + ': ' + payload.error) : payload.error, true);
+              return;
+            }
+            showInspirationProgress(payload);
+            return;
+          }
+
+          if (action === 'verify_pinterest') {
+            if (!payload.verify_request_id && !state.pinterestVerifyInFlight) return;
+            if (!isCurrentPinterestVerify(payload.verify_request_id)) return;
+            if (payload.status === 'checking' || payload.status === 'busy') {
+              if (!state.pinterestVerifyInFlight) return;
+              setPinterestVerification(payload);
+              setStatus(payload.message || '正在验证 Pinterest 在线获取...');
+              return;
+            }
+
+            const wasManualVerify = state.pinterestManualVerify;
+            finishPinterestVerify(payload, wasManualVerify);
+            return;
+          }
+
+          if (action === 'open_pinterest_login') {
+            setBusy(false);
+            if (payload.ok) {
+              setStatus(payload.message || '已打开插件专用 Pinterest 登录窗口。');
+            } else {
+              setStatus(payload.error || payload.message || 'Pinterest 登录窗口打开失败。', true);
+            }
+            return;
+          }
+
+          setBusy(false);
+          if (!payload.ok && payload.error) {
+            if (action === 'inspiration_burst') {
+              setInspirationRunning(false);
+              if (payload.cancelled) el.inspirationSummary.textContent = '已停止';
+            }
+            setStatus(payload.error_class ? (payload.error_class + ': ' + payload.error) : payload.error, !payload.cancelled);
+            return;
+          }
+
+          if (action === 'settings') {
+            el.endpoint.value = payload.endpoint || '';
+            el.apiKey.value = payload.api_key || '';
+            el.model.value = payload.model || '';
+            el.requestMode.value = payload.request_mode || 'openai_image_edit_multipart';
+            el.textEndpoint.value = payload.text_endpoint || '';
+            el.textApiKey.value = payload.text_api_key || '';
+            el.plannerModel.value = payload.planner_model || 'gpt-5.5';
+            el.referenceModel.value = payload.reference_model || 'gpt-5.5';
+            el.backupTextModels.value = payload.backup_text_models || '';
+            el.backupTextEndpoints.value = payload.backup_text_endpoints || '';
+            el.backupTextApiKeys.value = payload.backup_text_api_keys || '';
+            el.githubRepo.value = payload.github_repo || 'llghdd-afk/AI-SU';
+            el.githubAsset.value = payload.github_asset || 'LocalAIRender.zip';
+            el.githubDirectUrl.value = payload.github_direct_url || '';
+            el.outputDir.value = payload.output_dir || '';
+            el.width.value = payload.capture_width || 1280;
+            el.height.value = payload.capture_height || 900;
+            setStatus('已连接 SketchUp，插件版本 ' + (payload.plugin_version || 'unknown') + '。');
+          } else if (action === 'history') {
+            showHistory(payload.history || []);
+          } else if (action === 'apply_builtin_channel') {
+            const settings = payload.settings || {};
+            el.endpoint.value = settings.endpoint || '';
+            el.apiKey.value = settings.api_key || '';
+            el.model.value = settings.model || '';
+            el.requestMode.value = settings.request_mode || 'openai_image_edit_multipart';
+            el.textEndpoint.value = settings.text_endpoint || el.textEndpoint.value || '';
+            el.textApiKey.value = settings.text_api_key || el.textApiKey.value || '';
+            el.plannerModel.value = settings.planner_model || el.plannerModel.value || 'gpt-5.5';
+            el.referenceModel.value = settings.reference_model || el.referenceModel.value || 'gpt-5.5';
+            el.backupTextModels.value = settings.backup_text_models || el.backupTextModels.value || '';
+            el.backupTextEndpoints.value = settings.backup_text_endpoints || el.backupTextEndpoints.value || '';
+            el.backupTextApiKeys.value = settings.backup_text_api_keys || el.backupTextApiKeys.value || '';
+            setStatus('已切换到内置渠道。');
+          } else if (action === 'capture_view' || action === 'upload_image') {
+            showInput(payload);
+            setStatus('输入图已准备好。');
+          } else if (action === 'list_scene_views') {
+            showViewBatch(payload);
+            setStatus('已加载 ' + state.views.length + '/' + state.sceneTotal + ' 个场景视图，请选择一个视图。');
+          } else if (action === 'capture_scene_view') {
+            showInput(payload);
+            setStatus('已按选中视图生成输入图。');
+          } else if (action === 'camera_snapshot') {
+            state.camera = payload.camera;
+            showCamera(payload.camera);
+            setStatus('已获取相机视角。');
+          } else if (action === 'save_settings') {
+            setStatus('设置已保存。');
+          } else if (action === 'test_api') {
+            setStatus((payload.message || 'API 测试完成。') + (payload.body_preview ? ' 返回：' + payload.body_preview : ''));
+          } else if (action === 'test_text_api') {
+            setStatus((payload.message || '分析接口测试完成。') + (payload.model ? ' 模型：' + payload.model : ''));
+          } else if (action === 'update_plugin') {
+            setStatus(payload.message || '更新已完成，请重启 SketchUp 后生效。');
+          } else if (action === 'render') {
+            showOutput(payload);
+            setStatus('生成请求完成。');
+          } else if (action === 'inspiration_burst') {
+            setInspirationRunning(false);
+            showInspirationResults(payload);
+          } else if (action === 'set_reference_image') {
+            showInput(payload);
+            setStatus('已设为参考图。');
+          } else if (action === 'edit_result') {
+            showInput(payload);
+            if (state.pendingInspirationEdit) {
+              state.pendingInspirationEdit = false;
+              setActivePage('render');
+            }
+            el.prompt.focus();
+            setStatus('已进入改图状态，请输入修改描述后重新生成。');
+          } else if (action === 'upscale_result') {
+            showOutput(payload);
+            setStatus('高清放大完成。');
+          } else if (action === 'download_result') {
+            state.outputPath = payload.path || state.outputPath;
+            state.outputUrl = payload.url || state.outputUrl;
+            el.outputPath.textContent = payload.path || state.outputUrl || '-';
+            el.openOutputBtn.disabled = !(state.outputPath || state.outputUrl);
+            setStatus('已下载到：' + (payload.path || '输出目录'));
+          } else if (action === 'delete_history_item') {
+            clearOutput('已删除当前结果记录');
+            showHistory(payload.history || []);
+            if (!(payload.history || []).length) setStatus('结果记录已删除。');
+          }
+        }
+      };
+
+      el.captureBtn.addEventListener('click', function () {
+        setBusy(true);
+        setStatus('正在获取模型截图...');
+        callRuby('capture_view', { width: el.width.value, height: el.height.value });
+      });
+
+      el.cameraBtn.addEventListener('click', function () {
+        setBusy(true);
+        state.views = [];
+        state.selectedViewIndex = 0;
+        state.sceneTotal = 0;
+        state.sceneNextOffset = 0;
+        state.sceneHasMore = false;
+        el.viewGrid.innerHTML = '';
+        setStatus('正在生成首批场景视图缩略图...');
+        callRuby('list_scene_views', { width: 240, height: 150, offset: 0, limit: 6 });
+      });
+
+      el.saveSettingsBtn.addEventListener('click', function () {
+        setBusy(true);
+        setStatus('正在保存设置...');
+        callRuby('save_settings', settingsPayload());
+      });
+
+      el.builtinChannelBtn.addEventListener('click', function () {
+        setBusy(true);
+        setStatus('正在写入内置渠道...');
+        callRuby('apply_builtin_channel');
+      });
+
+      el.testApiBtn.addEventListener('click', function () {
+        setBusy(true);
+        setStatus('正在测试图像渲染接口...');
+        callRuby('test_api', settingsPayload());
+      });
+
+      el.testTextApiBtn.addEventListener('click', function () {
+        setBusy(true);
+        setStatus('正在测试文本/多模态分析接口...');
+        callRuby('test_text_api', settingsPayload());
+      });
+
+      el.updatePluginBtn.addEventListener('click', function () {
+        setBusy(true);
+        setStatus('正在从 GitHub 拉取更新...');
+        callRuby('update_plugin', settingsPayload());
+      });
+
+      el.renderBtn.addEventListener('click', function () {
+        setBusy(true);
+        setStatus('正在请求自有 API...');
+        callRuby('render', renderPayload());
+      });
+
+      el.inspirationCaptureBtn.addEventListener('click', function () {
+        setBusy(true);
+        setStatus('正在截取当前白模视口...');
+        callRuby('capture_view', { width: el.width.value, height: el.height.value });
+      });
+
+      el.pinterestVerifyBtn.addEventListener('click', function () {
+        runPinterestVerify({ manual: true });
+      });
+
+      el.pinterestLoginBtn.addEventListener('click', function () {
+        setBusy(true);
+        callRuby('open_pinterest_login', {});
+        setStatus('正在打开插件专用 Pinterest 登录窗口...');
+      });
+
+      el.inspirationGenerateBtn.addEventListener('click', function () {
+        const payload = inspirationPayload();
+        setInspirationRunning(true);
+        setFlowStage('capture');
+        state.inspirationResults = pendingInspirationResults(payload.target_count);
+        el.inspirationSummary.textContent = '准备中 0/' + payload.target_count;
+        el.inspirationPlan.classList.add('hidden');
+        el.inspirationPlan.innerHTML = '';
+        renderInspirationResultGrid(state.inspirationResults);
+        setStatus('正在灵感爆发：将基于当前白模截图生成 ' + payload.target_count + ' 个版本...');
+        callRuby('inspiration_burst', payload);
+      });
+
+      el.inspirationResumeBtn.addEventListener('click', function () {
+        const payload = renderPayload();
+        setInspirationRunning(true);
+        setFlowStage('render');
+        el.inspirationSummary.textContent = '正在读取上次未完成批次';
+        setStatus('正在补齐上次未完成的灵感爆发结果...');
+        callRuby('resume_inspiration_run', payload);
+      });
+
+      el.inspirationCancelBtn.addEventListener('click', function () {
+        setStatus('正在停止当前灵感爆发任务...');
+        callRuby('cancel_inspiration_burst', {});
+      });
+
+      el.fileInput.addEventListener('change', function () {
+        const file = el.fileInput.files && el.fileInput.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function () {
+          setBusy(true);
+          setStatus('正在导入参考图...');
+          callRuby('upload_image', { name: file.name, data_url: reader.result });
+        };
+        reader.readAsDataURL(file);
+      });
+
+      el.inspirationRefInput.addEventListener('change', function () {
+        handleInspirationFiles(el.inspirationRefInput.files);
+      });
+
+      el.inspirationClearRefsBtn.addEventListener('click', function () {
+        state.inspirationRefs = [];
+        renderReferenceStrip();
+        el.inspirationRefInput.value = '';
+        setStatus('灵感参考图已清空。');
+      });
+
+      el.copyCameraBtn.addEventListener('click', function () {
+        navigator.clipboard.writeText(el.cameraJson.textContent || '{}');
+        setStatus('相机 JSON 已复制。');
+      });
+
+      el.openInputBtn.addEventListener('click', function () {
+        callRuby('open_path', { path: state.inputPath, url: state.inputUrl });
+      });
+
+      el.openOutputBtn.addEventListener('click', function () {
+        callRuby('open_path', { path: state.outputPath, url: state.outputUrl });
+      });
+
+      el.previewOutputBtn.addEventListener('click', openPreview);
+
+      el.outputWrap.addEventListener('click', function (event) {
+        const button = event.target.closest('[data-result-action]');
+        if (button) {
+          event.preventDefault();
+          handleResultAction(button.getAttribute('data-result-action'));
+          return;
+        }
+        if (event.target.closest('.result-card img')) {
+          openPreview();
+        }
+      });
+
+      el.historyList.addEventListener('click', function (event) {
+        const item = event.target.closest('[data-history-id]');
+        if (!item) return;
+        selectHistoryRecord(item.getAttribute('data-history-id'));
+      });
+
+      el.inspirationRefStrip.addEventListener('click', function (event) {
+        const button = event.target.closest('[data-ref-index]');
+        if (!button) return;
+        const index = Number(button.getAttribute('data-ref-index'));
+        state.inspirationRefs.splice(index, 1);
+        renderReferenceStrip();
+      });
+
+      el.inspirationResults.addEventListener('click', function (event) {
+        const card = event.target.closest('[data-inspiration-index]');
+        if (!card) return;
+        const item = findInspirationResult(card.getAttribute('data-inspiration-index'));
+        const actionButton = event.target.closest('[data-inspiration-action]');
+        if (actionButton) {
+          event.preventDefault();
+          handleInspirationAction(item, actionButton.getAttribute('data-inspiration-action'));
+          return;
+        }
+        openInspirationCompare(item);
+      });
+
+      el.inspirationPlan.addEventListener('click', function (event) {
+        const button = event.target.closest('[data-open-pinterest]');
+        if (!button) return;
+        const url = button.getAttribute('data-open-pinterest');
+        if (!url) return;
+        callRuby('open_path', { url: url });
+      });
+
+      el.refreshHistoryBtn.addEventListener('click', function () {
+        setBusy(true);
+        setStatus('正在刷新历史...');
+        callRuby('ready');
+      });
+
+      el.renderNavBtn.addEventListener('click', function () {
+        setActivePage('render');
+      });
+
+      el.inspirationNavBtn.addEventListener('click', function () {
+        setActivePage('inspiration');
+      });
+
+      el.settingsNavBtn.addEventListener('click', function () {
+        setActivePage('settings');
+      });
+
+      el.helpNavBtn.addEventListener('click', function () {
+        setActivePage('help');
+      });
+
+      el.backToRenderBtn.addEventListener('click', function () {
+        setActivePage('render');
+      });
+
+      el.closeViewModal.addEventListener('click', hideViewModal);
+
+      el.loadMoreViewsBtn.addEventListener('click', function () {
+        if (!state.sceneHasMore) return;
+        setBusy(true);
+        setStatus('正在加载更多场景视图...');
+        callRuby('list_scene_views', {
+          width: 240,
+          height: 150,
+          offset: state.sceneNextOffset,
+          limit: 6
+        });
+      });
+
+      el.closePreviewModal.addEventListener('click', closePreview);
+
+      el.closeCompareModal.addEventListener('click', closeInspirationCompare);
+
+      el.compareModal.addEventListener('click', function (event) {
+        if (event.target === el.compareModal) {
+          closeInspirationCompare();
+          return;
+        }
+        const button = event.target.closest('[data-compare-action]');
+        if (!button) return;
+        const item = state.activeInspirationItem;
+        const action = button.getAttribute('data-compare-action');
+        if (action === 'toggle-annotations') {
+          state.showInspirationAnnotations = !state.showInspirationAnnotations;
+          openInspirationCompare(item);
+          return;
+        }
+        if (action === 'edit') closeInspirationCompare();
+        handleInspirationAction(item, action);
+      });
+
+      el.previewModal.addEventListener('click', function (event) {
+        if (event.target === el.previewModal) closePreview();
+        const button = event.target.closest('[data-preview-action]');
+        if (!button) return;
+        closePreview();
+        handleResultAction(button.getAttribute('data-preview-action'));
+      });
+
+      el.confirmViewBtn.addEventListener('click', function () {
+        const view = state.views[state.selectedViewIndex];
+        if (!view) {
+          hideViewModal();
+          return;
+        }
+        hideViewModal();
+        setBusy(true);
+        setStatus('正在导出选中视图...');
+        callRuby('capture_scene_view', {
+          page_index: view.page_index,
+          width: el.width.value,
+          height: el.height.value
+        });
+      });
+
+      restorePinterestStatusFromCache();
+      callRuby('ready');
+    })();
+  </script>
+</body>
+</html>
