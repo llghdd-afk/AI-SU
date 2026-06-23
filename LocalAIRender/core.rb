@@ -243,7 +243,7 @@ module LLGHD
         emit_progress(
           progress,
           stage: 'analyzing',
-          message: "正在用 #{text_model_candidates(settings, primary_key: 'planner_model', default_model: 'gpt-5.5').first} 总结白模并生成 Pinterest 搜索词...",
+          message: "正在用 #{Array(text_model_candidates(settings, primary_key: 'planner_model', default_model: 'gpt-5.5')).first || 'gpt-5.5'} 总结白模并生成 Pinterest 搜索词...",
           base_image: { path: image_path, url: file_url(image_path) },
           target_count: count
         )
@@ -922,14 +922,76 @@ module LLGHD
         error_result(e)
       end
 
+      def load_inspiration_history
+        { ok: true, inspiration_history: inspiration_history_records }
+      rescue StandardError => e
+        error_result(e)
+      end
+
       def delete_history_item(payload)
-        id = payload['id'].to_s
-        path = payload['path'].to_s
-        records = history_records.reject do |record|
-          (!id.empty? && record['id'].to_s == id) || (!path.empty? && record['path'].to_s == path)
+        delete_history_items(payload)
+      end
+
+      def delete_history_items(payload)
+        payload = {} unless payload.is_a?(Hash)
+        ids = payload_values(payload, 'ids') + payload_values(payload, 'id')
+        paths = payload_values(payload, 'paths') + payload_values(payload, 'path')
+        if ids.empty? && paths.empty?
+          return { ok: true, history: history_records, deleted_count: 0, deleted_files: 0 }
         end
-        write_history(records)
-        { ok: true, history: records }
+
+        deleted_count = 0
+        deleted_files = 0
+        remaining = []
+        history_mutex.synchronize do
+          records = history_records
+          remaining = records.reject do |record|
+            matched = history_record_selected?(record, ids, paths)
+            if matched
+              deleted_count += 1
+              deleted_files += 1 if safe_delete_output_file(record['path'])
+            end
+            matched
+          end
+          write_history(remaining)
+        end
+        { ok: true, history: history_records, deleted_count: deleted_count, deleted_files: deleted_files }
+      rescue StandardError => e
+        error_result(e)
+      end
+
+      def delete_inspiration_runs(payload)
+        payload = {} unless payload.is_a?(Hash)
+        run_ids = payload_values(payload, 'run_ids') + payload_values(payload, 'run_id') + payload_values(payload, 'ids')
+        if run_ids.empty?
+          return { ok: true, inspiration_history: inspiration_history_records, deleted_count: 0, deleted_files: 0 }
+        end
+
+        deleted_count = 0
+        deleted_files = 0
+        run_ids.uniq.each do |run_id|
+          path = inspiration_run_path(sanitize_run_id(run_id))
+          next unless File.file?(path)
+
+          data = JSON.parse(File.read(path, encoding: 'UTF-8'))
+          inspiration_file_paths(data).each do |file_path|
+            deleted_files += 1 if safe_delete_output_file(file_path)
+          end
+          deleted_files += 1 if safe_delete_output_file(path)
+          deleted_count += 1
+        rescue JSON::ParserError
+          deleted_files += 1 if safe_delete_output_file(path)
+          deleted_count += 1
+        end
+
+        history_mutex.synchronize { write_history(history_records) }
+        {
+          ok: true,
+          inspiration_history: inspiration_history_records,
+          history: history_records,
+          deleted_count: deleted_count,
+          deleted_files: deleted_files
+        }
       rescue StandardError => e
         error_result(e)
       end
@@ -2216,13 +2278,15 @@ module LLGHD
           'url' => file_url(local_path)
         }
         history_error = nil
-        begin
-          history_mutex.synchronize do
-            records = [record] + history_records
-            write_history(records.first(50))
+        unless inspiration_history_action?(action)
+          begin
+            history_mutex.synchronize do
+              records = [record] + history_records
+              write_history(records.first(50))
+            end
+          rescue StandardError => e
+            history_error = e
           end
-        rescue StandardError => e
-          history_error = e
         end
 
         additions = {
@@ -2298,6 +2362,67 @@ module LLGHD
         nil
       end
 
+      def inspiration_history_records
+        dir = File.join(output_root, 'inspiration_runs')
+        return [] unless Dir.exist?(dir)
+
+        Dir.glob(File.join(dir, 'inspiration-*.json')).filter_map do |path|
+          inspiration_history_record(path)
+        end.sort_by { |record| record['updated_at'].to_s }.reverse.first(50)
+      rescue StandardError
+        []
+      end
+
+      def inspiration_history_record(path)
+        data = JSON.parse(File.read(path, encoding: 'UTF-8'))
+        return nil unless data.is_a?(Hash)
+
+        run_id = data['run_id'].to_s
+        run_id = File.basename(path, '.json') if run_id.empty?
+        results = Array(data['results']).select { |item| item.is_a?(Hash) }.map { |item| normalize_result_urls(item) }
+        references = Array(data['references']).select { |item| item.is_a?(Hash) }.map { |item| normalize_result_urls(item) }
+        base_image = data['base_image'].is_a?(Hash) ? normalize_result_urls(data['base_image']) : {}
+        target_count = positive_int(data['target_count'], results.length)
+        generated_count = positive_int(data['generated_count'], results.count { |item| item['ok'] })
+        failed_count = positive_int(data['failed_count'], results.count { |item| item['ok'] == false })
+        thumbnail = results.find { |item| item['ok'] && !item['image_url'].to_s.empty? } ||
+                    references.find { |item| !item['image_url'].to_s.empty? } ||
+                    base_image
+
+        {
+          'run_id' => sanitize_run_id(run_id),
+          'updated_at' => data['updated_at'].to_s.empty? ? File.mtime(path).strftime('%Y-%m-%d %H:%M:%S') : data['updated_at'].to_s,
+          'complete' => data['complete'] == true,
+          'target_count' => target_count,
+          'generated_count' => generated_count,
+          'failed_count' => failed_count,
+          'pending_count' => positive_int(data['pending_count'], 0),
+          'base_image' => base_image,
+          'references' => references,
+          'results' => results,
+          'plan' => data['plan'].is_a?(Hash) ? data['plan'] : {},
+          'run_log_path' => path,
+          'thumbnail_url' => thumbnail['image_url'].to_s.empty? ? thumbnail['url'].to_s : thumbnail['image_url'].to_s
+        }
+      rescue StandardError
+        nil
+      end
+
+      def normalize_result_urls(item)
+        data = item.dup
+        path = data['image_path'].to_s.empty? ? data['path'].to_s : data['image_path'].to_s
+        if !path.empty? && File.file?(path)
+          url = file_url(path)
+          data['url'] = url if data['url'].to_s.empty?
+          data['image_url'] = url if data['image_url'].to_s.empty?
+        end
+        source = data['inspiration_source']
+        data['inspiration_source'] = normalize_result_urls(source) if source.is_a?(Hash)
+        data
+      rescue StandardError
+        item
+      end
+
       def history_records
         path = history_path
         return orphan_history_records unless File.file?(path)
@@ -2305,6 +2430,7 @@ module LLGHD
         data = JSON.parse(File.read(path, encoding: 'UTF-8'))
         records = data.is_a?(Array) ? data : []
         records = records.select { |record| record.is_a?(Hash) && File.file?(record['path'].to_s) }
+        records = records.reject { |record| inspiration_history_action?(record['action']) }
         merge_orphan_history_records(records)
       rescue JSON::ParserError
         orphan_history_records
@@ -2338,6 +2464,8 @@ module LLGHD
           stat = File.stat(path)
           name = File.basename(path)
           action = name.start_with?('inspiration_burst') ? 'inspiration_burst' : (name.start_with?('upscale') ? 'upscale' : 'render')
+          next if inspiration_history_action?(action)
+
           {
             'id' => "recovered-#{stat.mtime.to_i}-#{name.hash.abs}",
             'created_at' => stat.mtime.strftime('%Y-%m-%d %H:%M:%S'),
@@ -2350,9 +2478,66 @@ module LLGHD
             'url' => file_url(path),
             'recovered' => true
           }
-        end
+        end.compact
       rescue StandardError
         []
+      end
+
+      def inspiration_history_action?(action)
+        action.to_s == 'inspiration_burst'
+      end
+
+      def payload_values(payload, key)
+        value = payload[key]
+        value = payload[key.to_sym] if value.nil? && payload.respond_to?(:key?) && payload.key?(key.to_sym)
+        Array(value).map(&:to_s).map(&:strip).reject(&:empty?)
+      end
+
+      def history_record_selected?(record, ids, paths)
+        id = record['id'].to_s
+        path = safe_expand_path(record['path'].to_s)
+        ids.include?(id) || paths.map { |item| safe_expand_path(item) }.include?(path)
+      end
+
+      def sanitize_run_id(run_id)
+        File.basename(run_id.to_s.strip, '.json').gsub(/[^A-Za-z0-9_.-]/, '')
+      end
+
+      def inspiration_file_paths(data)
+        paths = []
+        collect_image_path(paths, data['base_image'])
+        Array(data['references']).each { |item| collect_image_path(paths, item) }
+        Array(data['results']).each { |item| collect_image_path(paths, item) }
+        paths.uniq
+      end
+
+      def collect_image_path(paths, item)
+        return unless item.is_a?(Hash)
+
+        %w[path image_path].each do |key|
+          value = item[key].to_s
+          paths << value unless value.empty?
+        end
+        collect_image_path(paths, item['history_record']) if item['history_record'].is_a?(Hash)
+        collect_image_path(paths, item['inspiration_source']) if item['inspiration_source'].is_a?(Hash)
+      end
+
+      def safe_delete_output_file(path)
+        return false unless output_file_path?(path)
+
+        expanded = safe_expand_path(path)
+        return false unless File.file?(expanded)
+
+        File.delete(expanded)
+        true
+      rescue StandardError
+        false
+      end
+
+      def output_file_path?(path)
+        expanded = safe_expand_path(path).tr('\\', '/').downcase
+        root = safe_expand_path(output_root).tr('\\', '/').downcase
+        !expanded.empty? && expanded.start_with?("#{root}/")
       end
 
       def file_url_to_path(url)

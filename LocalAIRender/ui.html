@@ -378,6 +378,7 @@
     }
 
     .history-item {
+      position: relative;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: #fff;
@@ -407,6 +408,90 @@
     }
 
     .history-meta strong {
+      color: var(--text);
+      font-size: 13px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .history-check,
+    .run-check {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.9);
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.16);
+      cursor: pointer;
+    }
+
+    .history-check input,
+    .run-check input {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      accent-color: var(--accent);
+    }
+
+    .inspiration-history-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 12px;
+      padding: 12px;
+      max-height: 340px;
+      overflow: auto;
+      background: #fbfcfd;
+    }
+
+    .inspiration-run-card {
+      position: relative;
+      display: grid;
+      grid-template-columns: 86px 1fr;
+      gap: 10px;
+      min-height: 96px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      cursor: pointer;
+    }
+
+    .inspiration-run-card.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(241, 90, 36, 0.12);
+    }
+
+    .run-thumb {
+      width: 86px;
+      aspect-ratio: 1 / 1;
+      border-radius: 6px;
+      overflow: hidden;
+      background: #eef1f5;
+    }
+
+    .run-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .run-meta {
+      min-width: 0;
+      display: grid;
+      align-content: center;
+      gap: 4px;
+      padding-right: 30px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .run-meta strong {
       color: var(--text);
       font-size: 13px;
       overflow: hidden;
@@ -1378,7 +1463,11 @@
         <section class="history-panel">
           <header>
             <span>生成历史</span>
-            <button id="refreshHistoryBtn">刷新</button>
+            <div class="header-actions">
+              <button id="historySelectAllBtn">全选</button>
+              <button id="deleteSelectedHistoryBtn" disabled>删除所选</button>
+              <button id="refreshHistoryBtn">刷新</button>
+            </div>
           </header>
           <div class="history-list" id="historyList">
             <div class="empty">生成后会自动保存历史</div>
@@ -1465,6 +1554,20 @@
           <div class="inspiration-plan hidden" id="inspirationPlan"></div>
           <div class="inspiration-result-grid" id="inspirationResults">
             <div class="empty">会按选择数量生成 2-12 个版本，并自动保存到历史</div>
+          </div>
+        </section>
+
+        <section class="inspiration-results">
+          <header>
+            <span>灵感历史</span>
+            <div class="header-actions">
+              <button id="refreshInspirationHistoryBtn">刷新</button>
+              <button id="selectAllInspirationHistoryBtn">全选</button>
+              <button id="deleteSelectedInspirationHistoryBtn" disabled>删除所选</button>
+            </div>
+          </header>
+          <div class="inspiration-history-list" id="inspirationHistoryList">
+            <div class="empty">完成灵感爆发后会按批次保存到这里</div>
           </div>
         </section>
       </section>
@@ -1735,6 +1838,10 @@
         pendingInspirationEdit: false,
         inspirationRefs: [],
         inspirationResults: [],
+        inspirationHistory: [],
+        selectedHistoryIds: {},
+        selectedInspirationRunIds: {},
+        activeInspirationRunId: '',
         pinterestLoginUrl: 'http://127.0.0.1:17862/login',
         pinterestSearchUrl: 'https://www.pinterest.com/search/pins/?q=modern%20interior%20design%20inspiration',
         pinterestStatus: null,
@@ -1802,6 +1909,8 @@
         previewOutputBtn: document.getElementById('previewOutputBtn'),
         openOutputBtn: document.getElementById('openOutputBtn'),
         historyList: document.getElementById('historyList'),
+        historySelectAllBtn: document.getElementById('historySelectAllBtn'),
+        deleteSelectedHistoryBtn: document.getElementById('deleteSelectedHistoryBtn'),
         refreshHistoryBtn: document.getElementById('refreshHistoryBtn'),
         viewModal: document.getElementById('viewModal'),
         viewGrid: document.getElementById('viewGrid'),
@@ -1836,7 +1945,11 @@
         inspirationCancelBtn: document.getElementById('inspirationCancelBtn'),
         inspirationPlan: document.getElementById('inspirationPlan'),
         inspirationResults: document.getElementById('inspirationResults'),
-        inspirationSummary: document.getElementById('inspirationSummary')
+        inspirationSummary: document.getElementById('inspirationSummary'),
+        inspirationHistoryList: document.getElementById('inspirationHistoryList'),
+        refreshInspirationHistoryBtn: document.getElementById('refreshInspirationHistoryBtn'),
+        selectAllInspirationHistoryBtn: document.getElementById('selectAllInspirationHistoryBtn'),
+        deleteSelectedInspirationHistoryBtn: document.getElementById('deleteSelectedInspirationHistoryBtn')
       };
 
       function callRuby(name, payload) {
@@ -1876,6 +1989,11 @@
         el.updatePluginBtn.disabled = isBusy;
         el.importKeyBtn.disabled = isBusy;
         el.exportKeyBtn.disabled = isBusy;
+        el.historySelectAllBtn.disabled = isBusy;
+        el.deleteSelectedHistoryBtn.disabled = isBusy || !selectedHistoryIds().length;
+        el.refreshInspirationHistoryBtn.disabled = isBusy;
+        el.selectAllInspirationHistoryBtn.disabled = isBusy;
+        el.deleteSelectedInspirationHistoryBtn.disabled = isBusy || !selectedInspirationRunIds().length;
         el.loadMoreViewsBtn.disabled = isBusy || !state.sceneHasMore;
       }
 
@@ -2034,8 +2152,11 @@
       }
 
       function showHistory(records) {
-        const list = records || [];
+        const list = (records || []).filter(function (record) {
+          return record && record.action !== 'inspiration_burst';
+        });
         state.history = list;
+        pruneHistorySelection();
         renderHistoryList(list);
         if (!list.length) {
           if (!hasResultImage()) clearOutput('生成后会显示在这里');
@@ -2049,21 +2170,59 @@
           image_url: latest.url,
           history_record: latest
         });
-        setStatus('已恢复上一次生成结果。');
+        setStatus('已恢复上一次材质渲染结果。');
       }
 
       function upsertHistory(record) {
         if (!record || !record.id) return;
+        if (record.action === 'inspiration_burst') return;
         state.history = [record].concat(state.history.filter(function (item) {
           return item.id !== record.id;
         })).slice(0, 50);
+        pruneHistorySelection();
+        renderHistoryList(state.history);
+      }
+
+      function selectedHistoryIds() {
+        return Object.keys(state.selectedHistoryIds).filter(function (id) {
+          return state.selectedHistoryIds[id];
+        });
+      }
+
+      function pruneHistorySelection() {
+        const live = {};
+        state.history.forEach(function (record) {
+          if (record.id) live[record.id] = true;
+        });
+        Object.keys(state.selectedHistoryIds).forEach(function (id) {
+          if (!live[id]) delete state.selectedHistoryIds[id];
+        });
+        updateHistorySelectionControls();
+      }
+
+      function updateHistorySelectionControls() {
+        const selected = selectedHistoryIds();
+        if (el.deleteSelectedHistoryBtn) el.deleteSelectedHistoryBtn.disabled = !selected.length;
+        if (el.historySelectAllBtn) {
+          el.historySelectAllBtn.textContent = state.history.length && selected.length === state.history.length ? '取消全选' : '全选';
+        }
+      }
+
+      function setAllHistorySelected(selected) {
+        state.selectedHistoryIds = {};
+        if (selected) {
+          state.history.forEach(function (record) {
+            if (record.id) state.selectedHistoryIds[record.id] = true;
+          });
+        }
         renderHistoryList(state.history);
       }
 
       function renderHistoryList(records) {
         const list = records || [];
         if (!list.length) {
-          el.historyList.innerHTML = '<div class="empty">生成后会自动保存历史</div>';
+          el.historyList.innerHTML = '<div class="empty">材质渲染后会自动保存到这里</div>';
+          updateHistorySelectionControls();
           return;
         }
 
@@ -2071,9 +2230,11 @@
           const active = record.id && record.id === state.outputId ? ' active' : '';
           const title = record.action === 'upscale'
             ? '高清放大'
-            : (record.action === 'inspiration_burst' ? '灵感爆发' : '生成结果');
+            : '材质渲染';
+          const checked = record.id && state.selectedHistoryIds[record.id] ? ' checked' : '';
           return [
             '<div class="history-item' + active + '" data-history-id="' + escapeAttr(record.id || '') + '">',
+            '<label class="history-check" title="选择"><input type="checkbox" data-history-check="' + escapeAttr(record.id || '') + '"' + checked + '></label>',
             '<img src="' + escapeAttr(record.url || '') + '" alt="">',
             '<div class="history-meta">',
             '<strong>' + escapeAttr(title) + '</strong>',
@@ -2082,6 +2243,7 @@
             '</div>'
           ].join('');
         }).join('');
+        updateHistorySelectionControls();
       }
 
       function selectHistoryRecord(id) {
@@ -2093,7 +2255,7 @@
           image_url: record.url,
           history_record: record
         });
-        setStatus('已切换历史成果。');
+        setStatus('已切换材质渲染历史结果。');
       }
 
       function showInspirationProgress(payload) {
@@ -2175,6 +2337,7 @@
       function showInspirationResults(payload) {
         const results = payload.results || [];
         state.inspirationResults = results;
+        state.activeInspirationRunId = payload.run_id || state.activeInspirationRunId || '';
         if (payload.base_image) {
           showInput(payload.base_image);
         }
@@ -2191,6 +2354,98 @@
         const firstOk = results.find(function (item) { return item.ok && (item.image_url || item.url); });
         if (firstOk) showOutput(firstOk);
         setStatus('灵感爆发完成：已生成 ' + success + '/' + target + ' 个版本。' + (failed ? ' 有失败项可在结果区查看。' : ''));
+      }
+
+      function selectedInspirationRunIds() {
+        return Object.keys(state.selectedInspirationRunIds).filter(function (id) {
+          return state.selectedInspirationRunIds[id];
+        });
+      }
+
+      function pruneInspirationSelection() {
+        const live = {};
+        state.inspirationHistory.forEach(function (run) {
+          if (run.run_id) live[run.run_id] = true;
+        });
+        Object.keys(state.selectedInspirationRunIds).forEach(function (id) {
+          if (!live[id]) delete state.selectedInspirationRunIds[id];
+        });
+        updateInspirationHistoryControls();
+      }
+
+      function updateInspirationHistoryControls() {
+        const selected = selectedInspirationRunIds();
+        if (el.deleteSelectedInspirationHistoryBtn) el.deleteSelectedInspirationHistoryBtn.disabled = !selected.length;
+        if (el.selectAllInspirationHistoryBtn) {
+          el.selectAllInspirationHistoryBtn.textContent = state.inspirationHistory.length && selected.length === state.inspirationHistory.length ? '取消全选' : '全选';
+        }
+      }
+
+      function setAllInspirationHistorySelected(selected) {
+        state.selectedInspirationRunIds = {};
+        if (selected) {
+          state.inspirationHistory.forEach(function (run) {
+            if (run.run_id) state.selectedInspirationRunIds[run.run_id] = true;
+          });
+        }
+        renderInspirationHistoryList(state.inspirationHistory);
+      }
+
+      function showInspirationHistory(records) {
+        state.inspirationHistory = records || [];
+        pruneInspirationSelection();
+        renderInspirationHistoryList(state.inspirationHistory);
+      }
+
+      function renderInspirationHistoryList(records) {
+        const list = records || [];
+        if (!list.length) {
+          el.inspirationHistoryList.innerHTML = '<div class="empty">完成灵感爆发后会按批次保存到这里</div>';
+          updateInspirationHistoryControls();
+          return;
+        }
+
+        el.inspirationHistoryList.innerHTML = list.map(function (run) {
+          const runId = run.run_id || '';
+          const active = runId && runId === state.activeInspirationRunId ? ' active' : '';
+          const checked = runId && state.selectedInspirationRunIds[runId] ? ' checked' : '';
+          const thumb = run.thumbnail_url || (run.base_image && run.base_image.url) || '';
+          const generated = Number(run.generated_count || 0);
+          const target = Number(run.target_count || (run.results || []).length || 0);
+          const failed = Number(run.failed_count || 0);
+          return [
+            '<div class="inspiration-run-card' + active + '" data-run-id="' + escapeAttr(runId) + '">',
+            '<label class="run-check" title="选择"><input type="checkbox" data-run-check="' + escapeAttr(runId) + '"' + checked + '></label>',
+            '<div class="run-thumb">' + (thumb ? '<img src="' + escapeAttr(thumb) + '" alt="">' : '') + '</div>',
+            '<div class="run-meta">',
+            '<strong>' + escapeAttr(run.updated_at || runId) + '</strong>',
+            '<span>' + escapeAttr('完成 ' + generated + '/' + target + (failed ? '，失败 ' + failed : '')) + '</span>',
+            '<span>' + escapeAttr(run.complete ? '已完成' : '可补齐') + '</span>',
+            '</div>',
+            '</div>'
+          ].join('');
+        }).join('');
+        updateInspirationHistoryControls();
+      }
+
+      function selectInspirationRun(runId) {
+        const run = state.inspirationHistory.find(function (item) {
+          return item.run_id === runId;
+        });
+        if (!run) return;
+        state.activeInspirationRunId = runId;
+        state.inspirationResults = run.results || [];
+        if (run.base_image) showInput(run.base_image);
+        if (run.plan) showInspirationPlan(run.plan);
+        renderInspirationResultGrid(state.inspirationResults);
+        renderInspirationHistoryList(state.inspirationHistory);
+        const success = Number(run.generated_count || state.inspirationResults.filter(function (item) { return item.ok; }).length);
+        const target = Number(run.target_count || state.inspirationResults.length);
+        const failed = Number(run.failed_count || Math.max(target - success, 0));
+        el.inspirationSummary.textContent = '历史批次 ' + success + '/' + target + (failed ? '，失败 ' + failed : '');
+        const firstOk = state.inspirationResults.find(function (item) { return item.ok && (item.image_url || item.url); });
+        if (firstOk) showOutput(firstOk);
+        setStatus('已恢复灵感历史批次。');
       }
 
       function renderInspirationResultGrid(results) {
@@ -3154,6 +3409,8 @@
             setStatus('已连接 SketchUp，插件版本 ' + (payload.plugin_version || 'unknown') + '。');
           } else if (action === 'history') {
             showHistory(payload.history || []);
+          } else if (action === 'inspiration_history') {
+            showInspirationHistory(payload.inspiration_history || []);
           } else if (action === 'apply_builtin_channel') {
             const settings = payload.settings || {};
             el.endpoint.value = settings.endpoint || '';
@@ -3195,6 +3452,7 @@
           } else if (action === 'inspiration_burst') {
             setInspirationRunning(false);
             showInspirationResults(payload);
+            callRuby('load_inspiration_history', {});
           } else if (action === 'set_reference_image') {
             showInput(payload);
             setStatus('已设为参考图。');
@@ -3219,6 +3477,23 @@
             clearOutput('已删除当前结果记录');
             showHistory(payload.history || []);
             if (!(payload.history || []).length) setStatus('结果记录已删除。');
+          } else if (action === 'delete_history_items') {
+            const activeDeleted = Boolean(state.outputId && state.selectedHistoryIds[state.outputId]);
+            state.selectedHistoryIds = {};
+            showHistory(payload.history || []);
+            if (activeDeleted) clearOutput('已删除选中的材质历史');
+            setStatus('已删除 ' + (payload.deleted_count || 0) + ' 条材质历史。');
+          } else if (action === 'delete_inspiration_runs') {
+            state.selectedInspirationRunIds = {};
+            showInspirationHistory(payload.inspiration_history || []);
+            if (!state.inspirationHistory.find(function (run) { return run.run_id === state.activeInspirationRunId; })) {
+              state.activeInspirationRunId = '';
+              state.inspirationResults = [];
+              renderInspirationResultGrid([]);
+              el.inspirationSummary.textContent = '等待生成';
+            }
+            if (payload.history) showHistory(payload.history || []);
+            setStatus('已删除 ' + (payload.deleted_count || 0) + ' 个灵感批次。');
           }
         }
       };
@@ -3407,9 +3682,30 @@
       });
 
       el.historyList.addEventListener('click', function (event) {
+        const checkbox = event.target.closest('[data-history-check]');
+        if (checkbox) {
+          event.stopPropagation();
+          const id = checkbox.getAttribute('data-history-check');
+          if (id) state.selectedHistoryIds[id] = checkbox.checked;
+          updateHistorySelectionControls();
+          return;
+        }
         const item = event.target.closest('[data-history-id]');
         if (!item) return;
         selectHistoryRecord(item.getAttribute('data-history-id'));
+      });
+
+      el.historySelectAllBtn.addEventListener('click', function () {
+        setAllHistorySelected(selectedHistoryIds().length !== state.history.length);
+      });
+
+      el.deleteSelectedHistoryBtn.addEventListener('click', function () {
+        const ids = selectedHistoryIds();
+        if (!ids.length) return;
+        if (!confirm('删除选中的 ' + ids.length + ' 条材质历史？对应生成图片也会一起清理。')) return;
+        setBusy(true);
+        setStatus('正在删除选中的材质历史...');
+        callRuby('delete_history_items', { ids: ids });
       });
 
       el.inspirationRefStrip.addEventListener('click', function (event) {
@@ -3431,6 +3727,39 @@
           return;
         }
         openInspirationCompare(item);
+      });
+
+      el.inspirationHistoryList.addEventListener('click', function (event) {
+        const checkbox = event.target.closest('[data-run-check]');
+        if (checkbox) {
+          event.stopPropagation();
+          const id = checkbox.getAttribute('data-run-check');
+          if (id) state.selectedInspirationRunIds[id] = checkbox.checked;
+          updateInspirationHistoryControls();
+          return;
+        }
+        const card = event.target.closest('[data-run-id]');
+        if (!card) return;
+        selectInspirationRun(card.getAttribute('data-run-id'));
+      });
+
+      el.refreshInspirationHistoryBtn.addEventListener('click', function () {
+        setBusy(true);
+        setStatus('正在刷新灵感历史...');
+        callRuby('load_inspiration_history', {});
+      });
+
+      el.selectAllInspirationHistoryBtn.addEventListener('click', function () {
+        setAllInspirationHistorySelected(selectedInspirationRunIds().length !== state.inspirationHistory.length);
+      });
+
+      el.deleteSelectedInspirationHistoryBtn.addEventListener('click', function () {
+        const runIds = selectedInspirationRunIds();
+        if (!runIds.length) return;
+        if (!confirm('删除选中的 ' + runIds.length + ' 个灵感批次？批次内的灵感图和生成图也会一起清理。')) return;
+        setBusy(true);
+        setStatus('正在删除选中的灵感历史...');
+        callRuby('delete_inspiration_runs', { run_ids: runIds });
       });
 
       el.inspirationPlan.addEventListener('click', function (event) {

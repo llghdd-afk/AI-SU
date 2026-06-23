@@ -29,6 +29,7 @@ module LLGHD
         @dialog.show
         send_to_js('settings', settings_payload)
         send_to_js('history', LocalAIRender.load_history)
+        send_to_js('inspiration_history', LocalAIRender.load_inspiration_history)
       rescue StandardError
         nil
       end
@@ -39,6 +40,7 @@ module LLGHD
         @dialog.add_action_callback('ready') do |_context, _payload|
           send_to_js('settings', settings_payload)
           send_to_js('history', LocalAIRender.load_history)
+          send_to_js('inspiration_history', LocalAIRender.load_inspiration_history)
         end
 
         @dialog.add_action_callback('capture_view') do |_context, payload|
@@ -143,6 +145,18 @@ module LLGHD
 
         @dialog.add_action_callback('delete_history_item') do |_context, payload|
           send_to_js('delete_history_item', LocalAIRender.delete_history_item(parse_payload(payload)))
+        end
+
+        @dialog.add_action_callback('delete_history_items') do |_context, payload|
+          send_to_js('delete_history_items', LocalAIRender.delete_history_items(parse_payload(payload)))
+        end
+
+        @dialog.add_action_callback('load_inspiration_history') do |_context, _payload|
+          send_to_js('inspiration_history', LocalAIRender.load_inspiration_history)
+        end
+
+        @dialog.add_action_callback('delete_inspiration_runs') do |_context, payload|
+          send_to_js('delete_inspiration_runs', LocalAIRender.delete_inspiration_runs(parse_payload(payload)))
         end
 
         @dialog.add_action_callback('open_path') do |_context, payload|
@@ -422,6 +436,9 @@ module LLGHD
             upscale_result
             download_result
             delete_history_item
+            delete_history_items
+            load_inspiration_history
+            delete_inspiration_runs
             open_path
           ]
         )
