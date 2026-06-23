@@ -1244,7 +1244,7 @@
       width: min(1040px, calc(100vw - 36px));
       max-height: min(800px, calc(100vh - 36px));
       display: grid;
-      grid-template-rows: auto minmax(260px, 1fr) auto;
+      grid-template-rows: auto minmax(300px, 1fr) auto auto;
       border-radius: 8px;
       background: #fff;
       box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
@@ -1256,13 +1256,14 @@
       grid-template-columns: 1fr 1fr;
       gap: 1px;
       background: var(--line);
-      overflow: auto;
+      overflow: hidden;
     }
 
     .compare-pane {
       display: grid;
-      grid-template-rows: auto minmax(220px, 1fr);
+      grid-template-rows: auto 1fr;
       min-width: 0;
+      min-height: 0;
       background: #111827;
     }
 
@@ -1277,22 +1278,76 @@
       display: grid;
       place-items: center;
       padding: 14px;
-      min-height: 360px;
+      height: clamp(300px, 48vh, 520px);
+      min-height: 0;
       color: #d1d5db;
       line-height: 1.6;
       text-align: center;
+      overflow: hidden;
     }
 
     .compare-image img {
       max-width: 100%;
-      max-height: 620px;
+      max-height: 100%;
       border-radius: 6px;
       background: #fff;
+      object-fit: contain;
     }
 
     .compare-image .annotated-source {
+      display: grid;
+      place-items: center;
+      height: 100%;
       max-width: 100%;
       width: min(100%, 720px);
+    }
+
+    .compare-image .annotation-frame {
+      display: inline-block;
+      width: auto;
+      max-width: 100%;
+      max-height: 100%;
+    }
+
+    .compare-image .annotation-frame img {
+      width: auto;
+      height: auto;
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    .compare-prompt {
+      max-height: 190px;
+      overflow: auto;
+      padding: 12px 14px;
+      border-top: 1px solid rgba(148, 163, 184, 0.22);
+      background: #0f172a;
+    }
+
+    .compare-prompt .source-prompt {
+      max-width: none;
+      border-color: rgba(148, 163, 184, 0.28);
+      background: rgba(15, 23, 42, 0.96);
+    }
+
+    .compare-prompt .key-point-list {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    @media (max-width: 760px) {
+      .compare-stage {
+        grid-template-columns: 1fr;
+        overflow: auto;
+      }
+
+      .compare-image {
+        height: 300px;
+      }
+
+      .compare-prompt .key-point-list {
+        grid-template-columns: 1fr;
+      }
     }
 
     .hidden {
@@ -1804,6 +1859,7 @@
           <div class="compare-image" id="compareRender"></div>
         </section>
       </div>
+      <div class="compare-prompt" id="comparePrompt"></div>
       <div class="preview-actions">
         <button data-compare-action="toggle-annotations">隐藏标注</button>
         <button data-compare-action="open-source">打开 Pinterest</button>
@@ -1924,6 +1980,7 @@
         compareTitle: document.getElementById('compareTitle'),
         compareInspiration: document.getElementById('compareInspiration'),
         compareRender: document.getElementById('compareRender'),
+        comparePrompt: document.getElementById('comparePrompt'),
         closeCompareModal: document.getElementById('closeCompareModal'),
         inspirationCaptureBtn: document.getElementById('inspirationCaptureBtn'),
         inspirationForceCapture: document.getElementById('inspirationForceCapture'),
@@ -2611,6 +2668,30 @@
         ].join('');
       }
 
+      function inspirationSourceImageHtml(source) {
+        source = source || {};
+        const hiddenClass = state.showInspirationAnnotations ? '' : ' annotations-hidden';
+        if (source.image_url) {
+          return [
+            '<div class="annotated-source' + hiddenClass + '">',
+            '<div class="annotation-frame">',
+            '<img src="' + escapeAttr(source.image_url) + '" alt="">',
+            annotationLayerHtml(source, false),
+            '</div>',
+            '</div>'
+          ].join('');
+        }
+
+        return [
+          '<div class="source-placeholder">',
+          '<strong>' + escapeAttr(source.fetch_error ? '未取得 Pinterest 网站灵感图' : 'Pinterest 搜索词') + '</strong>',
+          '<span>' + escapeAttr(source.query || '等待多模态模型生成搜索词') + '</span>',
+          source.fetch_error ? '<span>' + escapeAttr(source.fetch_error) + '</span>' : '',
+          '<span>' + escapeAttr(source.intent || '') + '</span>',
+          '</div>'
+        ].join('');
+      }
+
       function selectInspirationResult(index) {
         const item = state.inspirationResults.find(function (result) {
           return Number(result.index) === Number(index);
@@ -2644,10 +2725,11 @@
         const renderUrl = item.image_url || item.url || '';
         state.activeInspirationItem = item;
         el.compareTitle.textContent = source.title || ('灵感版本 ' + (item.index || ''));
-        el.compareInspiration.innerHTML = inspirationSourceHtml(source, { compact: false, fallbackPrompt: item.prompt || '' });
+        el.compareInspiration.innerHTML = inspirationSourceImageHtml(source);
         el.compareRender.innerHTML = renderUrl
           ? '<img src="' + escapeAttr(renderUrl) + '" alt="">'
           : '<div>没有可预览的效果图</div>';
+        el.comparePrompt.innerHTML = sourcePromptBlockHtml(source, item.prompt || '', false);
         const toggleButton = el.compareModal.querySelector('[data-compare-action="toggle-annotations"]');
         if (toggleButton) {
           toggleButton.textContent = state.showInspirationAnnotations ? '隐藏标注' : '显示标注';
@@ -2660,6 +2742,7 @@
         el.compareModal.classList.add('hidden');
         el.compareInspiration.innerHTML = '';
         el.compareRender.innerHTML = '';
+        el.comparePrompt.innerHTML = '';
       }
 
       function handleInspirationAction(item, action) {
