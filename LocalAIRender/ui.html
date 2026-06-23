@@ -561,6 +561,7 @@
       max-height: 620px;
       border-radius: 6px;
       background: #fff;
+      cursor: zoom-in;
     }
 
     .preview-actions {
@@ -1003,16 +1004,29 @@
     .pair-pane .image-slot {
       display: grid;
       place-items: center;
-      min-height: 150px;
+      height: 170px;
+      min-height: 170px;
       background: #eef1f5;
+      overflow: hidden;
     }
 
     .pair-pane .image-slot img {
       width: 100%;
-      height: 150px;
+      height: 170px;
       aspect-ratio: auto;
       object-fit: cover;
       display: block;
+    }
+
+    .pair-pane .image-slot .annotated-source,
+    .pair-pane .image-slot .annotation-frame {
+      height: 100%;
+    }
+
+    .pair-pane .image-slot .source-placeholder {
+      width: 100%;
+      min-height: 170px;
+      height: 170px;
     }
 
     .source-placeholder {
@@ -1108,6 +1122,13 @@
       text-align: left;
       font-size: 12px;
       line-height: 1.55;
+    }
+
+    .inspiration-card > .source-prompt {
+      margin: 0 10px 10px;
+      max-height: 150px;
+      overflow: auto;
+      background: rgba(15, 23, 42, 0.78);
     }
 
     .source-prompt strong {
@@ -1259,6 +1280,53 @@
       overflow: hidden;
     }
 
+    .compare-stage.flow {
+      display: grid;
+      grid-template-columns: 1fr;
+      align-content: start;
+      gap: 16px;
+      padding: 14px;
+      background: #0f172a;
+      overflow: auto;
+    }
+
+    .compare-flow-item {
+      display: grid;
+      gap: 0;
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      border-radius: 8px;
+      background: #111827;
+      overflow: hidden;
+    }
+
+    .compare-flow-item.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(241, 90, 36, 0.18);
+    }
+
+    .compare-flow-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 12px;
+      color: #fff;
+      font-weight: 700;
+      background: #1f2937;
+    }
+
+    .compare-flow-title span:last-child {
+      color: #cbd5e1;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .compare-flow-pair {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: rgba(148, 163, 184, 0.28);
+    }
+
     .compare-pane {
       display: grid;
       grid-template-rows: auto 1fr;
@@ -1292,6 +1360,7 @@
       border-radius: 6px;
       background: #fff;
       object-fit: contain;
+      cursor: zoom-in;
     }
 
     .compare-image .annotated-source {
@@ -1335,10 +1404,64 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
+    .compare-flow-prompt {
+      padding: 12px;
+      background: #0f172a;
+    }
+
+    .compare-flow-prompt .source-prompt {
+      background: rgba(15, 23, 42, 0.96);
+    }
+
+    .image-zoom-panel {
+      position: relative;
+      width: min(96vw, 1500px);
+      height: min(92vh, 980px);
+      border-radius: 8px;
+      background: #0b1120;
+      box-shadow: 0 24px 70px rgba(15, 23, 42, 0.34);
+      overflow: hidden;
+    }
+
+    .image-zoom-stage {
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+    }
+
+    .image-zoom-stage img {
+      width: min(1800px, 180vw);
+      max-width: none;
+      height: auto;
+      border-radius: 6px;
+      background: #fff;
+      cursor: zoom-out;
+    }
+
+    .image-zoom-close {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      z-index: 2;
+      width: 36px;
+      min-height: 36px;
+      padding: 0;
+      border-radius: 50%;
+      color: #fff;
+      background: rgba(15, 23, 42, 0.76);
+    }
+
     @media (max-width: 760px) {
       .compare-stage {
         grid-template-columns: 1fr;
         overflow: auto;
+      }
+
+      .compare-flow-pair {
+        grid-template-columns: 1fr;
       }
 
       .compare-image {
@@ -1849,7 +1972,7 @@
         </div>
         <button class="icon-btn" id="closeCompareModal" title="关闭">×</button>
       </div>
-      <div class="compare-stage">
+      <div class="compare-stage" id="compareStage">
         <section class="compare-pane">
           <header> Pinterest 灵感 </header>
           <div class="compare-image" id="compareInspiration"></div>
@@ -1866,6 +1989,15 @@
         <button data-compare-action="download-source">下载灵感图</button>
         <button data-compare-action="download">下载效果图</button>
         <button class="primary" data-compare-action="edit">送去材质渲染微调</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="imageZoomModal">
+    <div class="image-zoom-panel">
+      <button class="image-zoom-close" id="closeImageZoomModal" title="关闭">×</button>
+      <div class="image-zoom-stage">
+        <img id="imageZoomImage" alt="">
       </div>
     </div>
   </div>
@@ -1977,11 +2109,15 @@
         previewImage: document.getElementById('previewImage'),
         closePreviewModal: document.getElementById('closePreviewModal'),
         compareModal: document.getElementById('compareModal'),
+        compareStage: document.getElementById('compareStage'),
         compareTitle: document.getElementById('compareTitle'),
         compareInspiration: document.getElementById('compareInspiration'),
         compareRender: document.getElementById('compareRender'),
         comparePrompt: document.getElementById('comparePrompt'),
         closeCompareModal: document.getElementById('closeCompareModal'),
+        imageZoomModal: document.getElementById('imageZoomModal'),
+        imageZoomImage: document.getElementById('imageZoomImage'),
+        closeImageZoomModal: document.getElementById('closeImageZoomModal'),
         inspirationCaptureBtn: document.getElementById('inspirationCaptureBtn'),
         inspirationForceCapture: document.getElementById('inspirationForceCapture'),
         inspirationInputWrap: document.getElementById('inspirationInputWrap'),
@@ -2556,13 +2692,14 @@
             '<div class="comparison-pair">',
             '<div class="pair-pane">',
             '<div class="label"><span>' + escapeAttr(source.type === 'pinterest_lens' ? 'Pinterest Lens 灵感' : 'Pinterest 灵感') + '</span><span>' + escapeAttr(source.reference_name || '') + '</span></div>',
-            '<div class="image-slot">' + inspirationSourceHtml(source, { compact: true, fallbackPrompt: prompt }) + '</div>',
+            '<div class="image-slot">' + inspirationSourceImageHtml(source, { compact: true }) + '</div>',
             '</div>',
             '<div class="pair-pane">',
             '<div class="label"><span>生成效果图</span><span>SU 白模</span></div>',
-            '<div class="image-slot"><img src="' + escapeAttr(url) + '" alt=""></div>',
+            '<div class="image-slot"><img src="' + escapeAttr(url) + '" alt="" data-zoom-url="' + escapeAttr(url) + '"></div>',
             '</div>',
             '</div>',
+            sourcePromptBlockHtml(source, prompt, true),
             '<div class="inspiration-meta">',
             '<strong>' + escapeAttr(source.title || ('版本 ' + (item.index || ''))) + '</strong>',
             '<span>' + escapeAttr(source.summary || source.intent || prompt.slice(0, 120)) + '</span>',
@@ -2668,15 +2805,17 @@
         ].join('');
       }
 
-      function inspirationSourceImageHtml(source) {
+      function inspirationSourceImageHtml(source, options) {
         source = source || {};
+        options = options || {};
+        const compact = Boolean(options.compact);
         const hiddenClass = state.showInspirationAnnotations ? '' : ' annotations-hidden';
         if (source.image_url) {
           return [
             '<div class="annotated-source' + hiddenClass + '">',
-            '<div class="annotation-frame">',
-            '<img src="' + escapeAttr(source.image_url) + '" alt="">',
-            annotationLayerHtml(source, false),
+            '<div class="annotation-frame' + (compact ? ' compact' : '') + '">',
+            '<img src="' + escapeAttr(source.image_url) + '" alt="" data-zoom-url="' + escapeAttr(source.image_url) + '">',
+            annotationLayerHtml(source, compact),
             '</div>',
             '</div>'
           ].join('');
@@ -2719,30 +2858,99 @@
         });
       }
 
-      function openInspirationCompare(item) {
-        if (!item || !item.ok) return;
+      function compareFlowItems(item) {
+        const list = (state.inspirationResults || []).filter(function (result) {
+          return result && result.ok && (result.image_url || result.url);
+        });
+        if (item && list.indexOf(item) < 0) list.push(item);
+        list.sort(function (a, b) { return Number(a.index || 0) - Number(b.index || 0); });
+        return list.length ? list : (item ? [item] : []);
+      }
+
+      function compareFlowItemHtml(item, activeItem) {
         const source = item.inspiration_source || {};
         const renderUrl = item.image_url || item.url || '';
+        const active = Number(item.index) === Number(activeItem && activeItem.index) ? ' active' : '';
+        return [
+          '<section class="compare-flow-item' + active + '" data-compare-flow-index="' + escapeAttr(item.index || '') + '">',
+          '<div class="compare-flow-title">',
+          '<span>' + escapeAttr(source.title || ('版本 ' + (item.index || ''))) + '</span>',
+          '<span>版本 ' + escapeAttr(item.index || '') + '</span>',
+          '</div>',
+          '<div class="compare-flow-pair">',
+          '<section class="compare-pane">',
+          '<header> Pinterest 灵感 </header>',
+          '<div class="compare-image">' + inspirationSourceImageHtml(source, { compact: false }) + '</div>',
+          '</section>',
+          '<section class="compare-pane">',
+          '<header> SU 效果图 </header>',
+          '<div class="compare-image">' + (renderUrl ? '<img src="' + escapeAttr(renderUrl) + '" alt="" data-zoom-url="' + escapeAttr(renderUrl) + '">' : '<div>没有可预览的效果图</div>') + '</div>',
+          '</section>',
+          '</div>',
+          '<div class="compare-flow-prompt">' + sourcePromptBlockHtml(source, item.prompt || '', false) + '</div>',
+          '</section>'
+        ].join('');
+      }
+
+      function setActiveCompareItem(item) {
+        if (!item || !item.ok) return;
+        const source = item.inspiration_source || {};
         state.activeInspirationItem = item;
         el.compareTitle.textContent = source.title || ('灵感版本 ' + (item.index || ''));
-        el.compareInspiration.innerHTML = inspirationSourceImageHtml(source);
-        el.compareRender.innerHTML = renderUrl
-          ? '<img src="' + escapeAttr(renderUrl) + '" alt="">'
-          : '<div>没有可预览的效果图</div>';
-        el.comparePrompt.innerHTML = sourcePromptBlockHtml(source, item.prompt || '', false);
         const toggleButton = el.compareModal.querySelector('[data-compare-action="toggle-annotations"]');
         if (toggleButton) {
           toggleButton.textContent = state.showInspirationAnnotations ? '隐藏标注' : '显示标注';
           toggleButton.disabled = !(source.image_url && sourceKeyPoints(source).length);
         }
+        Array.prototype.forEach.call(el.compareStage.querySelectorAll('[data-compare-flow-index]'), function (card) {
+          card.classList.toggle('active', Number(card.getAttribute('data-compare-flow-index')) === Number(item.index));
+        });
+      }
+
+      function openInspirationCompare(item) {
+        if (!item || !item.ok) return;
+        const items = compareFlowItems(item);
+        el.compareStage.classList.add('flow');
+        el.compareStage.innerHTML = items.map(function (result) {
+          return compareFlowItemHtml(result, item);
+        }).join('');
+        el.comparePrompt.classList.add('hidden');
+        setActiveCompareItem(item);
         el.compareModal.classList.remove('hidden');
+        window.requestAnimationFrame(function () {
+          const target = Array.prototype.slice.call(el.compareStage.querySelectorAll('[data-compare-flow-index]')).find(function (card) {
+            return Number(card.getAttribute('data-compare-flow-index')) === Number(item.index);
+          });
+          if (target) target.scrollIntoView({ block: 'start' });
+        });
       }
 
       function closeInspirationCompare() {
         el.compareModal.classList.add('hidden');
-        el.compareInspiration.innerHTML = '';
-        el.compareRender.innerHTML = '';
+        el.compareStage.classList.remove('flow');
+        el.compareStage.innerHTML = '';
         el.comparePrompt.innerHTML = '';
+        el.comparePrompt.classList.remove('hidden');
+      }
+
+      function syncCompareActiveFromScroll() {
+        if (el.compareModal.classList.contains('hidden')) return;
+        const cards = Array.prototype.slice.call(el.compareStage.querySelectorAll('[data-compare-flow-index]'));
+        if (!cards.length) return;
+        const stageRect = el.compareStage.getBoundingClientRect();
+        const targetY = stageRect.top + stageRect.height * 0.45;
+        let best = cards[0];
+        let bestDistance = Infinity;
+        cards.forEach(function (card) {
+          const rect = card.getBoundingClientRect();
+          const distance = Math.abs((rect.top + rect.height * 0.5) - targetY);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            best = card;
+          }
+        });
+        const item = findInspirationResult(best.getAttribute('data-compare-flow-index'));
+        if (item && item !== state.activeInspirationItem) setActiveCompareItem(item);
       }
 
       function handleInspirationAction(item, action) {
@@ -2804,12 +3012,25 @@
       function openPreview() {
         if (!hasResultImage()) return;
         el.previewImage.src = state.outputUrl || '';
+        el.previewImage.setAttribute('data-zoom-url', state.outputUrl || '');
         el.previewModal.classList.remove('hidden');
       }
 
       function closePreview() {
         el.previewModal.classList.add('hidden');
         el.previewImage.removeAttribute('src');
+        el.previewImage.removeAttribute('data-zoom-url');
+      }
+
+      function openImageZoom(url) {
+        if (!url) return;
+        el.imageZoomImage.src = url;
+        el.imageZoomModal.classList.remove('hidden');
+      }
+
+      function closeImageZoom() {
+        el.imageZoomModal.classList.add('hidden');
+        el.imageZoomImage.removeAttribute('src');
       }
 
       function currentResultPayload(extra) {
@@ -3897,10 +4118,33 @@
 
       el.closeCompareModal.addEventListener('click', closeInspirationCompare);
 
+      el.closeImageZoomModal.addEventListener('click', closeImageZoom);
+
+      el.imageZoomModal.addEventListener('click', function (event) {
+        if (event.target === el.imageZoomModal || event.target === el.imageZoomImage) closeImageZoom();
+      });
+
+      el.compareStage.addEventListener('scroll', syncCompareActiveFromScroll);
+
       el.compareModal.addEventListener('click', function (event) {
         if (event.target === el.compareModal) {
           closeInspirationCompare();
           return;
+        }
+        const zoomTarget = event.target.closest('[data-zoom-url]');
+        if (zoomTarget) {
+          const zoomCard = zoomTarget.closest('[data-compare-flow-index]');
+          if (zoomCard) {
+            const zoomItem = findInspirationResult(zoomCard.getAttribute('data-compare-flow-index'));
+            if (zoomItem) setActiveCompareItem(zoomItem);
+          }
+          openImageZoom(zoomTarget.getAttribute('data-zoom-url') || zoomTarget.getAttribute('src'));
+          return;
+        }
+        const flowCard = event.target.closest('[data-compare-flow-index]');
+        if (flowCard) {
+          const item = findInspirationResult(flowCard.getAttribute('data-compare-flow-index'));
+          if (item) setActiveCompareItem(item);
         }
         const button = event.target.closest('[data-compare-action]');
         if (!button) return;
@@ -3917,6 +4161,11 @@
 
       el.previewModal.addEventListener('click', function (event) {
         if (event.target === el.previewModal) closePreview();
+        const zoomTarget = event.target.closest('[data-zoom-url]');
+        if (zoomTarget) {
+          openImageZoom(zoomTarget.getAttribute('data-zoom-url') || zoomTarget.getAttribute('src'));
+          return;
+        }
         const button = event.target.closest('[data-preview-action]');
         if (!button) return;
         closePreview();
